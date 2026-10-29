@@ -1,0 +1,763 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+/// 部门。树形结构，parent_id 为 NULL 表示根节点。
+model SysDept {
+  id         BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  parentId   BigInt?   @map("parent_id") @db.UnsignedBigInt
+  name       String    @db.VarChar(50)
+  sortOrder  Int       @default(0) @map("sort_order")
+  status     Int       @default(1) @db.TinyInt
+  remark     String?   @db.VarChar(255)
+
+  createdAt  DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt  DateTime  @default(now()) @map("updated_at") @db.DateTime(3)
+  createdBy  BigInt    @map("created_by") @db.UnsignedBigInt
+  updatedBy  BigInt    @map("updated_by") @db.UnsignedBigInt
+
+  deletedAt  DateTime? @map("deleted_at") @db.DateTime(3)
+  deletedBy  BigInt?   @map("deleted_by") @db.UnsignedBigInt
+
+  children   SysDept[] @relation("DeptTree")
+  parent     SysDept?  @relation("DeptTree", fields: [parentId], references: [id])
+  users      SysUser[]
+
+  @@map("sys_dept")
+}
+
+/// 用户。
+model SysUser {
+  id             BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  username       String    @db.VarChar(50)
+  password       String    @db.VarChar(100)
+  realName       String    @map("real_name") @db.VarChar(50)
+  employeeNo     String    @map("employee_no") @db.VarChar(50)
+  mobile         String?   @db.VarChar(20)
+  deptId         BigInt    @map("dept_id") @db.UnsignedBigInt
+  status         Int       @default(1) @db.TinyInt
+  isSuperAdmin   Boolean   @default(false) @map("is_super_admin")
+  lastLoginAt    DateTime? @map("last_login_at") @db.DateTime(3)
+
+  createdAt      DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt      DateTime  @default(now()) @map("updated_at") @db.DateTime(3)
+  createdBy      BigInt    @map("created_by") @db.UnsignedBigInt
+  updatedBy      BigInt    @map("updated_by") @db.UnsignedBigInt
+
+  deletedAt      DateTime? @map("deleted_at") @db.DateTime(3)
+  deletedBy      BigInt?   @map("deleted_by") @db.UnsignedBigInt
+
+  dept           SysDept   @relation(fields: [deptId], references: [id])
+  userRoles      SysUserRole[]
+
+  @@index([deptId])
+  @@map("sys_user")
+}
+
+/// 角色。
+model SysRole {
+  id          BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  name        String   @db.VarChar(50)
+  code        String   @db.VarChar(50)
+  /// 数据范围：all 全校 / deptAndChildren 本部门及以下 / dept 本部门 / self 仅本人。
+  /// 一个用户持多角色时取**最宽**的那个（见 DataScopeService）。
+  dataScope   String   @default("self") @map("data_scope") @db.VarChar(20)
+  status      Int      @default(1) @db.TinyInt
+  remark      String?  @db.VarChar(255)
+
+  createdAt   DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt   DateTime @default(now()) @map("updated_at") @db.DateTime(3)
+  createdBy   BigInt   @map("created_by") @db.UnsignedBigInt
+  updatedBy   BigInt   @map("updated_by") @db.UnsignedBigInt
+
+  deletedAt   DateTime? @map("deleted_at") @db.DateTime(3)
+  deletedBy   BigInt?   @map("deleted_by") @db.UnsignedBigInt
+
+  rolePermissions SysRolePermission[]
+  userRoles       SysUserRole[]
+
+  @@map("sys_role")
+}
+
+/// 权限点。DIR 仅用于前端菜单分组，MENU 是页面，BUTTON 对应写操作接口。
+model SysPermission {
+  id         BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  parentId   BigInt?  @map("parent_id") @db.UnsignedBigInt
+  type       String   @db.VarChar(10)
+  code       String?  @db.VarChar(100)
+  name       String   @db.VarChar(50)
+  path       String?  @db.VarChar(200)
+  component  String?  @db.VarChar(200)
+  icon       String?  @db.VarChar(50)
+  sortOrder  Int      @default(0) @map("sort_order")
+  status     Int      @default(1) @db.TinyInt
+
+  createdAt  DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt  DateTime @default(now()) @map("updated_at") @db.DateTime(3)
+  createdBy  BigInt   @map("created_by") @db.UnsignedBigInt
+  updatedBy  BigInt   @map("updated_by") @db.UnsignedBigInt
+
+  deletedAt  DateTime? @map("deleted_at") @db.DateTime(3)
+  deletedBy  BigInt?   @map("deleted_by") @db.UnsignedBigInt
+
+  parent     SysPermission?  @relation("PermissionTree", fields: [parentId], references: [id])
+  children   SysPermission[] @relation("PermissionTree")
+  rolePermissions SysRolePermission[]
+
+  @@map("sys_permission")
+}
+
+/// 用户↔角色。连接表，物理删除（DB-10）——软删除会让「撤销后重新授予」撞唯一约束。
+model SysUserRole {
+  id        BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  userId    BigInt   @map("user_id") @db.UnsignedBigInt
+  roleId    BigInt   @map("role_id") @db.UnsignedBigInt
+
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt DateTime @default(now()) @map("updated_at") @db.DateTime(3)
+  createdBy BigInt   @map("created_by") @db.UnsignedBigInt
+  updatedBy BigInt   @map("updated_by") @db.UnsignedBigInt
+
+  user      SysUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      SysRole  @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@map("sys_user_role")
+}
+
+/// 角色↔权限。连接表，物理删除（DB-10）。
+model SysRolePermission {
+  id           BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  roleId       BigInt   @map("role_id") @db.UnsignedBigInt
+  permissionId BigInt   @map("permission_id") @db.UnsignedBigInt
+
+  createdAt    DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt    DateTime @default(now()) @map("updated_at") @db.DateTime(3)
+  createdBy    BigInt   @map("created_by") @db.UnsignedBigInt
+  updatedBy    BigInt   @map("updated_by") @db.UnsignedBigInt
+
+  role         SysRole       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   SysPermission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@map("sys_role_permission")
+}
+
+// ============================================================================
+// 以下四张表对应已登记的错误码段位 25000 / 26000 / 27000 / 28000。
+// 段位在 error-code.ts 里先于实现登记，是「种子要给什么」的清单；表跟着清单走。
+// ============================================================================
+
+/// 数据字典类型。字典项挂在它下面，是前端下拉的统一来源。
+///
+/// `code` 的唯一性由**生成列 + 唯一索引**保证（DB-11，SQL 见 migration），
+/// schema.prisma 里不写 @@unique：软删除的行还占着普通唯一索引，
+/// 「删了旧的再建同名」会撞约束，而这条约束表达的不是我们想要的事实。
+/// 应用层仍先判一次同名（DICT_TYPE_CODE_TAKEN），为的是给出错误码而不是 P2002。
+model SysDictType {
+  id        BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  code      String    @db.VarChar(50)
+  name      String    @db.VarChar(50)
+  status    Int       @default(1) @db.TinyInt
+  remark    String?   @db.VarChar(255)
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt DateTime  @default(now()) @map("updated_at") @db.DateTime(3)
+  createdBy BigInt    @map("created_by") @db.UnsignedBigInt
+  updatedBy BigInt    @map("updated_by") @db.UnsignedBigInt
+
+  deletedAt DateTime? @map("deleted_at") @db.DateTime(3)
+  deletedBy BigInt?   @map("deleted_by") @db.UnsignedBigInt
+
+  items     SysDictItem[]
+
+  @@map("sys_dict_type")
+}
+
+/// 数据字典项。`value` 是存进业务表的那个值，`label` 是给人看的那个。
+model SysDictItem {
+  id         BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  dictTypeId BigInt    @map("dict_type_id") @db.UnsignedBigInt
+  label      String    @db.VarChar(50)
+  value      String    @db.VarChar(50)
+  sortOrder  Int       @default(0) @map("sort_order")
+  status     Int       @default(1) @db.TinyInt
+  remark     String?   @db.VarChar(255)
+
+  createdAt  DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt  DateTime  @default(now()) @map("updated_at") @db.DateTime(3)
+  createdBy  BigInt    @map("created_by") @db.UnsignedBigInt
+  updatedBy  BigInt    @map("updated_by") @db.UnsignedBigInt
+
+  deletedAt  DateTime? @map("deleted_at") @db.DateTime(3)
+  deletedBy  BigInt?   @map("deleted_by") @db.UnsignedBigInt
+
+  dictType   SysDictType @relation(fields: [dictTypeId], references: [id])
+
+  @@index([dictTypeId])
+  @@map("sys_dict_item")
+}
+
+/// 系统配置。运行期可读写的键值对，`valueType` 决定 `value` 怎么解析。
+model SysConfig {
+  id        BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  code      String    @db.VarChar(100)
+  name      String    @db.VarChar(50)
+  value     String    @db.VarChar(500)
+  /// string | number | boolean | json
+  valueType String    @map("value_type") @db.VarChar(20)
+  status    Int       @default(1) @db.TinyInt
+  remark    String?   @db.VarChar(255)
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt DateTime  @default(now()) @map("updated_at") @db.DateTime(3)
+  createdBy BigInt    @map("created_by") @db.UnsignedBigInt
+  updatedBy BigInt    @map("updated_by") @db.UnsignedBigInt
+
+  deletedAt DateTime? @map("deleted_at") @db.DateTime(3)
+  deletedBy BigInt?   @map("deleted_by") @db.UnsignedBigInt
+
+  @@map("sys_config")
+}
+
+/// 操作日志。**append-only**：只插不改不删，保留期由归档策略管，不给业务删改入口。
+///
+/// 「谁做的」就是 `created_by`（Prisma extension 统一填，操作者即写入者），
+/// 不另设 operator_id 列——两个列记同一件事，漂移时没有任何机制会说话。
+/// `operator_name` 是**冗余快照**：改名/销号后历史日志仍显示当时的名字，
+/// 列表页不必为了显示去 join sys_user（日志的读者常常没有读用户的权限）。
+model SysOpLog {
+  id           BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  module       String   @db.VarChar(50)
+  action       String   @db.VarChar(50)
+  targetType   String?  @map("target_type") @db.VarChar(50)
+  targetId     String?  @map("target_id") @db.VarChar(50)
+  operatorName String   @map("operator_name") @db.VarChar(50)
+  method       String   @db.VarChar(10)
+  path         String   @db.VarChar(200)
+  ip           String?  @db.VarChar(45)
+  userAgent    String?  @map("user_agent") @db.VarChar(255)
+  /// 1 成功 / 0 失败
+  status       Int      @default(1) @db.TinyInt
+  errorCode    Int?     @map("error_code")
+  errorMsg     String?  @map("error_msg") @db.VarChar(500)
+  before       Json?
+  after        Json?
+  durationMs   Int      @map("duration_ms")
+
+  createdAt    DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt    DateTime @default(now()) @map("updated_at") @db.DateTime(3)
+  createdBy    BigInt   @map("created_by") @db.UnsignedBigInt
+  updatedBy    BigInt   @map("updated_by") @db.UnsignedBigInt
+
+  @@index([createdBy])
+  @@index([module])
+  @@index([createdAt])
+  @@map("sys_op_log")
+}
+
+/// 文件对象。磁盘名与原名分离——原名只进 `originName`，**永不参与拼路径**
+/// （路径穿越的唯一可靠防线是让攻击者控制的字符串到不了路径拼接那一行）。
+model SysFile {
+  id           BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  /// 用户上传时的原始文件名，只用于下载时回显
+  originName   String   @map("origin_name") @db.VarChar(255)
+  /// 落盘名（uuid + 扩展名），FILE_ROOT 下的相对路径
+  storageName  String   @map("storage_name") @db.VarChar(100)
+  ext          String   @db.VarChar(20)
+  mimeType     String   @map("mime_type") @db.VarChar(100)
+  size         Int      @db.UnsignedInt
+  sha256       String   @db.Char(64)
+  /// 归属的业务对象类型（如 'MentorApplication'）。空 = 无归属的通用文件
+  ownerType String? @map("owner_type") @db.VarChar(50)
+  /// 归属的业务对象 ID。与 ownerType **成对**出现
+  ownerId   BigInt? @map("owner_id")   @db.UnsignedBigInt
+
+  createdAt    DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt    DateTime @default(now()) @map("updated_at") @db.DateTime(3)
+  /// 上传人（Prisma extension 填 created_by，这里由 mapper 映射成 uploaderId）
+  createdBy    BigInt   @map("created_by") @db.UnsignedBigInt
+  updatedBy    BigInt   @map("updated_by") @db.UnsignedBigInt
+
+  deletedAt    DateTime? @map("deleted_at") @db.DateTime(3)
+  deletedBy    BigInt?   @map("deleted_by") @db.UnsignedBigInt
+
+  @@index([createdBy])
+  @@index([sha256])
+  @@map("sys_file")
+}
+
+// ────────────────────────────────────────────────────────────────────
+// 业务模型写在这条线以下（mentor-back）。
+//
+// 上面 11 个 Sys* 模型是**契约**，生成时从通用后台的 schema 拼进来。
+// 不要改它们的字段名：`prisma/migrations/` 里的 DDL 是原样复制的，schema 与
+// DDL 一分叉，下次 migrate 就对不上；而 Prisma extension 又按模型名分派审计与
+// 软删除语义。真要改字段，schema 与迁移一起改，并确认扩展还认得这个模型名。
+//
+// 你自己的表照着这套约定写：
+//   · 主键 BIGINT UNSIGNED，对外一律字符串（BigInt 直接 JSON 化会抛）
+//   · 审计四字段 created_at / updated_at / created_by / updated_by ——
+//     扩展对**所有**模型自动填，Service 里不许手写赋值。这四列 NOT NULL 且无默认值，
+//     所以 repository 的 create 仍要给 createdBy/updatedBy 填 0n 当**类型占位**：
+//     Prisma extension 先剥掉它们、再按当前操作者重写，运行时不会落那个 0n。
+//   · 要软删除的表加 deleted_at / deleted_by。注意扩展的软删除**只认登记过的模型**
+//     （SOFT_DELETE_MODELS），业务表的软删要自己写：repository 里显式
+//     update 打 deletedAt / deletedBy，每条读都带 `deletedAt: null`
+//   · 时间 DATETIME(3)，存 UTC
+//   · 软删后要能「同名重建」的唯一键，见 prisma/schema-contract.md 的生成列
+//     那一段（DB-11）——它写不进 schema.prisma，必须在迁移里手写
+// ────────────────────────────────────────────────────────────────────
+
+// ============================================================================
+// 同步层（外部系统拥有，本系统只读落库）—— 见需求 §2.1
+//
+// 写入方是**同步任务**，不是操作人，所以这三张表的 created_by / updated_by
+// 没有「谁做的」语义（Prisma extension 照样填，取当时上下文的操作者即可）。
+// 出处记 SyncOrgUnit.syncRunId / SyncPerson.syncRunId——**行级**记，不靠
+// syncedAt 的时间窗反推：两条同步链可以重叠（这正是 sync-write-scope 用
+// AsyncLocalStorage 而不是布尔开关的理由），时间窗一旦重叠就不唯一。
+// 列是裸 BigInt，**不挂外键**：出处是留痕不是归属，SyncRun 按保留期清掉时
+// 同步行必须活下来。
+// ============================================================================
+
+/// 同步来的组织单元（学院 / 系所树）。
+///
+/// `code` 的唯一性走 DB-11 生成列（见迁移）：软删的行不能一直占着这个码，
+/// 否则「源系统把学院删了又加回来」会撞唯一键，而那恰恰是同步最常见的重放。
+model SyncOrgUnit {
+  id        BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  code      String    @db.VarChar(50)
+  name      String    @db.VarChar(100)
+  parentId  BigInt?   @map("parent_id") @db.UnsignedBigInt
+  /// 学院 / 系所 / 其他，同步源给什么存什么，本系统不裁
+  kind      String?   @db.VarChar(20)
+  syncedAt  DateTime  @map("synced_at") @db.DateTime(3)
+  /// 出处：哪一次同步落的这一行。**裸列无外键**（见上方说明）
+  syncRunId BigInt?   @map("sync_run_id") @db.UnsignedBigInt
+  /// 投影映射：这一行投影出来的 `SysDept.id`。**裸列无外键**（同上）。
+  ///
+  /// 不按 `(parent_id, name)` 配行：源系统一改名，按名字配就会当成「旧的没了 +
+  /// 新的来了」——软删旧部门、新建一个，而 `sys_user.dept_id` 全指向那条软删行，
+  /// 数据权限当场失效。有了这一列，改名退化成一次 update。
+  /// `SyncPerson` → `SysUser` 不需要对应的列：那边的自然键是 `username`，
+  /// 有 `uk_sys_user_username_active` 兜着。两边不对称，是因为两边的键不对称。
+  deptId    BigInt?   @map("dept_id") @db.UnsignedBigInt
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt DateTime  @default(now()) @map("updated_at") @db.DateTime(3)
+  createdBy BigInt    @map("created_by") @db.UnsignedBigInt
+  updatedBy BigInt    @map("updated_by") @db.UnsignedBigInt
+
+  deletedAt DateTime? @map("deleted_at") @db.DateTime(3)
+  deletedBy BigInt?   @map("deleted_by") @db.UnsignedBigInt
+
+  parent    SyncOrgUnit?  @relation("SyncOrgTree", fields: [parentId], references: [id])
+  children  SyncOrgUnit[] @relation("SyncOrgTree")
+  persons   SyncPerson[]
+
+  @@index([parentId])
+  @@index([syncRunId])
+  @@index([deptId])
+  @@map("sync_org_unit")
+}
+
+/// 同步来的人员（学生 / 校内导师 / 校外导师）。
+///
+/// `login` 是学号 / 工号，也是同步幂等的自然键（DB-11 生成列保唯一）。
+/// **业务表通过 `id` 关联到人，不冗余姓名 / 学院**（§2.3）——显示时联查本表。
+model SyncPerson {
+  id         BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  /// 学号 / 工号，登录名
+  login      String    @db.VarChar(50)
+  realName   String    @map("real_name") @db.VarChar(50)
+  /// student | internalMentor | externalMentor
+  personType String    @map("person_type") @db.VarChar(20)
+  orgUnitId  BigInt    @map("org_unit_id") @db.UnsignedBigInt
+  major      String?   @db.VarChar(100)
+  className  String?   @map("class_name") @db.VarChar(50)
+  mobile     String?   @db.VarChar(20)
+  syncedAt   DateTime  @map("synced_at") @db.DateTime(3)
+  /// 出处：哪一次同步落的这一行。**裸列无外键**（见上方说明）
+  syncRunId  BigInt?   @map("sync_run_id") @db.UnsignedBigInt
+
+  createdAt  DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt  DateTime  @default(now()) @map("updated_at") @db.DateTime(3)
+  createdBy  BigInt    @map("created_by") @db.UnsignedBigInt
+  updatedBy  BigInt    @map("updated_by") @db.UnsignedBigInt
+
+  deletedAt  DateTime? @map("deleted_at") @db.DateTime(3)
+  deletedBy  BigInt?   @map("deleted_by") @db.UnsignedBigInt
+
+  orgUnit    SyncOrgUnit @relation(fields: [orgUnitId], references: [id])
+  profiles   MentorProfile[]
+  /// 以申请人身份出现的申请（Task 13）
+  applications MentorApplication[]
+  /// 以学生身份发起的预约（P2）
+  appointments Appointment[]
+
+  @@index([orgUnitId])
+  @@index([personType])
+  @@index([syncRunId])
+  @@map("sync_person")
+}
+
+/// 一次同步的批次。**失败明细必须看得见**（ERR-07）——`detail` 存失败行 + 原因的 JSON，
+/// 不静默吞。这张表是同步任务自己的流水，可以更新（RUNNING → OK/PARTIAL/FAILED），
+/// 所以既不进 SOFT_DELETE_MODELS 也没有软删列。
+model SyncRun {
+  id         BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  /// 数据源标识（mock / 学工 / 人事…）
+  source     String    @db.VarChar(50)
+  startedAt  DateTime  @map("started_at") @db.DateTime(3)
+  finishedAt DateTime? @map("finished_at") @db.DateTime(3)
+  /// 0 RUNNING | 1 OK | 2 PARTIAL | 3 FAILED
+  status     Int       @db.TinyInt
+  /// 增量与全量都记 total
+  total      Int       @default(0)
+  okCount    Int       @default(0) @map("ok_count")
+  failCount  Int       @default(0) @map("fail_count")
+  /// 失败行 + 原因
+  detail     Json?
+
+  createdAt  DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt  DateTime  @default(now()) @map("updated_at") @db.DateTime(3)
+  createdBy  BigInt    @map("created_by") @db.UnsignedBigInt
+  updatedBy  BigInt    @map("updated_by") @db.UnsignedBigInt
+
+  @@index([startedAt])
+  @@index([source])
+  @@map("sync_run")
+}
+
+// ============================================================================
+// 业务层（本系统拥有）—— 见需求 §2.2
+//
+// 本期只落**表 + 关联 + 已经定死的枚举列**，业务字段（简介、成果、资质那些文本）
+// 留给 P1 / P2 / P3 的任务补列。这是刻意的：字段还没定就开始写列，等于把猜出来
+// 的形状固化进迁移，而枚举值是需求已经钉死的那一半。
+//
+// 跨表关联一律走 `SyncPerson.id`，**不冗余姓名 / 学院**（§2.3）。
+// ============================================================================
+
+/// 导师专业档案。挂在同步来的导师账号上（§2.3）。
+///
+/// `mentorType` **不落列**——它由 `SyncPerson.personType` 推导（Task 11），
+/// 冗余一份就会跟同步源漂移，而且没人会发现。
+model MentorProfile {
+  id         BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  personId   BigInt    @map("person_id") @db.UnsignedBigInt
+  /// 指导方向，自由文本数组（Ruling #13，不做字典）。JSON 列——MySQL/Prisma 无原生数组
+  researchFields Json  @map("research_fields")
+  /// 0 DRAFT | 1 PENDING | 2 APPROVED | 3 REJECTED | 4 FROZEN | 5 REMOVED
+  /// **由审核流驱动，接口不得直接改**（Task 11 有专门用例）
+  status     Int       @default(0) @db.TinyInt
+
+  /// 个人简介（≤2000 字符是 DTO 的约束，R48；列选 Text 不设长）
+  summary            String? @map("summary")               @db.Text
+  /// 研究成果（同上）。
+  /// **字段名不能叫 `achievements`**：那个名字被下面的 P3 成果关系
+  /// （`achievements Achievement[]`，竞赛获奖 / 项目立项）占了，Prisma 不允许
+  /// 同名字段。列名仍是 `achievements`、响应 DTO 的字段名也仍是 `achievements`
+  /// （外部契约不动）；撞的只是 Prisma 的导航属性名。
+  researchAchievements String? @map("achievements")         @db.Text
+  /// 指导经验（同上）
+  guidanceExperience String? @map("guidance_experience")    @db.Text
+  /// 合作单位（仅校外 mentorType='external' 时有效——内校落 NULL，R49）
+  affiliateOrg       String? @map("affiliate_org")          @db.VarChar(100)
+  /// 社会任职（仅校外 mentorType='external' 时有效——内校落 NULL，R49）
+  socialRoles        String? @map("social_roles")           @db.VarChar(100)
+
+  createdAt  DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt  DateTime  @default(now()) @map("updated_at") @db.DateTime(3)
+  createdBy  BigInt    @map("created_by") @db.UnsignedBigInt
+  updatedBy  BigInt    @map("updated_by") @db.UnsignedBigInt
+
+  deletedAt  DateTime? @map("deleted_at") @db.DateTime(3)
+  deletedBy  BigInt?   @map("deleted_by") @db.UnsignedBigInt
+
+  person     SyncPerson @relation(fields: [personId], references: [id])
+
+  applications MentorApplication[]
+  timeSlots    MentorTimeSlot[]
+  appointments Appointment[]
+  assessments  Assessment[]
+  achievements Achievement[]
+
+  @@index([personId])
+  @@index([status])
+  @@map("mentor_profile")
+}
+
+/// 入驻 / 信息修改申请。**提交即快照**：`snapshot` 存当时的填报内容，
+/// 后续改档案不影响已提交的申请（Task 13 的快照不可变用例钉的就是它）。
+model MentorApplication {
+  id           BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  /// 1 ONBOARD | 2 PROFILE_CHANGE
+  type         Int       @db.TinyInt
+  /// 申请人 = 导师本人
+  applicant    SyncPerson @relation(fields: [applicantId], references: [id])
+  applicantId  BigInt    @map("applicant_id") @db.UnsignedBigInt
+  /// 提交当时的填报内容（MentorProfileDraft 形状）
+  snapshot     Json
+  /// 0 DRAFT | 1 SUBMITTED | 2 COLLEGE_REVIEWING | 3 COLLEGE_REJECTED
+  /// 4 SC_REVIEWING | 5 SC_REJECTED | 6 APPROVED | 7 WITHDRAWN
+  status       Int       @default(0) @db.TinyInt
+  /// 二级学院那一跳的审核记录（审核人 / 意见 / 时间）
+  collegeReview Json?   @map("college_review")
+  /// 双创学院那一跳的审核记录
+  scReview     Json?     @map("sc_review")
+  submittedAt  DateTime? @map("submitted_at") @db.DateTime(3)
+
+  createdAt    DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt    DateTime  @default(now()) @map("updated_at") @db.DateTime(3)
+  createdBy    BigInt    @map("created_by") @db.UnsignedBigInt
+  updatedBy    BigInt    @map("updated_by") @db.UnsignedBigInt
+
+  deletedAt    DateTime? @map("deleted_at") @db.DateTime(3)
+  deletedBy    BigInt?   @map("deleted_by") @db.UnsignedBigInt
+
+  profile      MentorProfile @relation(fields: [profileId], references: [id])
+  profileId    BigInt        @map("profile_id") @db.UnsignedBigInt
+
+  materials    MentorApplicationMaterial[]
+
+  @@index([applicantId])
+  @@index([profileId])
+  @@index([type])
+  @@index([status])
+  @@map("mentor_application")
+}
+
+/// 导师佐证材料（职称证书 / 行业资质 / 其他）。挂在**申请**上，按申请归属鉴权（Task 16）。
+model MentorApplicationMaterial {
+  id            BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  applicationId BigInt   @map("application_id") @db.UnsignedBigInt
+  /// 1 职称证书 | 2 行业资质 | 3 其他
+  kind          Int      @db.TinyInt
+  /// 文件归属校验的锚点：文件按它对 `SysFile.ownerType` / `ownerId`
+  fileId        BigInt   @map("file_id") @db.UnsignedBigInt
+
+  createdAt     DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt     DateTime @default(now()) @map("updated_at") @db.DateTime(3)
+  createdBy     BigInt   @map("created_by") @db.UnsignedBigInt
+  updatedBy     BigInt   @map("updated_by") @db.UnsignedBigInt
+
+  deletedAt     DateTime? @map("deleted_at") @db.DateTime(3)
+  deletedBy     BigInt?   @map("deleted_by") @db.UnsignedBigInt
+
+  application   MentorApplication @relation(fields: [applicationId], references: [id])
+
+  @@index([applicationId])
+  @@map("mentor_application_material")
+}
+
+// ── 以下五个模型属于 P2 / P3 / P4，本期只落表 + 关联，字段到各自分期补 ──────
+
+/// 可指导时段（P2 预约流）。周几 + 起止，开放 / 关闭。
+model MentorTimeSlot {
+  id        BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  mentorId  BigInt   @map("mentor_id") @db.UnsignedBigInt
+
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt DateTime @default(now()) @map("updated_at") @db.DateTime(3)
+  createdBy BigInt   @map("created_by") @db.UnsignedBigInt
+  updatedBy BigInt   @map("updated_by") @db.UnsignedBigInt
+
+  deletedAt DateTime? @map("deleted_at") @db.DateTime(3)
+  deletedBy BigInt?   @map("deleted_by") @db.UnsignedBigInt
+
+  mentor    MentorProfile @relation(fields: [mentorId], references: [id])
+
+  @@index([mentorId])
+  @@map("mentor_time_slot")
+}
+
+/// 预约（P2）。5 类预约，状态机见需求 §3.2——**状态还没定，本期不落列**。
+model Appointment {
+  id        BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  mentorId  BigInt   @map("mentor_id") @db.UnsignedBigInt
+  student   SyncPerson @relation(fields: [studentId], references: [id])
+  studentId BigInt   @map("student_id") @db.UnsignedBigInt
+
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt DateTime @default(now()) @map("updated_at") @db.DateTime(3)
+  createdBy BigInt   @map("created_by") @db.UnsignedBigInt
+  updatedBy BigInt   @map("updated_by") @db.UnsignedBigInt
+
+  deletedAt DateTime? @map("deleted_at") @db.DateTime(3)
+  deletedBy BigInt?   @map("deleted_by") @db.UnsignedBigInt
+
+  mentor    MentorProfile @relation(fields: [mentorId], references: [id])
+
+  materials        AppointmentMaterial[]
+  guidanceRecords  GuidanceRecord[]
+  reviews          StudentReview[]
+
+  @@index([mentorId])
+  @@index([studentId])
+  @@map("appointment")
+}
+
+/// 预约材料（P2）。图片 / PDF，多份。
+model AppointmentMaterial {
+  id            BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  appointmentId BigInt   @map("appointment_id") @db.UnsignedBigInt
+  fileId        BigInt   @map("file_id") @db.UnsignedBigInt
+
+  createdAt     DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt     DateTime @default(now()) @map("updated_at") @db.DateTime(3)
+  createdBy     BigInt   @map("created_by") @db.UnsignedBigInt
+  updatedBy     BigInt   @map("updated_by") @db.UnsignedBigInt
+
+  deletedAt     DateTime? @map("deleted_at") @db.DateTime(3)
+  deletedBy     BigInt?   @map("deleted_by") @db.UnsignedBigInt
+
+  appointment   Appointment @relation(fields: [appointmentId], references: [id])
+
+  @@index([appointmentId])
+  @@map("appointment_material")
+}
+
+/// 指导记录（P2）。学生确认 / 异议。
+model GuidanceRecord {
+  id            BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  appointmentId BigInt   @map("appointment_id") @db.UnsignedBigInt
+
+  createdAt     DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt     DateTime @default(now()) @map("updated_at") @db.DateTime(3)
+  createdBy     BigInt   @map("created_by") @db.UnsignedBigInt
+  updatedBy     BigInt   @map("updated_by") @db.UnsignedBigInt
+
+  deletedAt     DateTime? @map("deleted_at") @db.DateTime(3)
+  deletedBy     BigInt?   @map("deleted_by") @db.UnsignedBigInt
+
+  appointment   Appointment @relation(fields: [appointmentId], references: [id])
+
+  materials     GuidanceMaterial[]
+
+  @@index([appointmentId])
+  @@map("guidance_record")
+}
+
+/// 过程材料（P2）。课件、笔记、修改意见。
+model GuidanceMaterial {
+  id              BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  guidanceRecordId BigInt  @map("guidance_record_id") @db.UnsignedBigInt
+  fileId          BigInt   @map("file_id") @db.UnsignedBigInt
+
+  createdAt       DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt       DateTime @default(now()) @map("updated_at") @db.DateTime(3)
+  createdBy       BigInt   @map("created_by") @db.UnsignedBigInt
+  updatedBy       BigInt   @map("updated_by") @db.UnsignedBigInt
+
+  deletedAt       DateTime? @map("deleted_at") @db.DateTime(3)
+  deletedBy       BigInt?   @map("deleted_by") @db.UnsignedBigInt
+
+  guidanceRecord  GuidanceRecord @relation(fields: [guidanceRecordId], references: [id])
+
+  @@index([guidanceRecordId])
+  @@map("guidance_material")
+}
+
+/// 学生评价（P3）。三维度评分。
+model StudentReview {
+  id            BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  appointmentId BigInt   @map("appointment_id") @db.UnsignedBigInt
+
+  createdAt     DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt     DateTime @default(now()) @map("updated_at") @db.DateTime(3)
+  createdBy     BigInt   @map("created_by") @db.UnsignedBigInt
+  updatedBy     BigInt   @map("updated_by") @db.UnsignedBigInt
+
+  deletedAt     DateTime? @map("deleted_at") @db.DateTime(3)
+  deletedBy     BigInt?   @map("deleted_by") @db.UnsignedBigInt
+
+  appointment   Appointment @relation(fields: [appointmentId], references: [id])
+
+  @@index([appointmentId])
+  @@map("student_review")
+}
+
+/// 考核（P3）。初评 + 终评两跳。
+model Assessment {
+  id        BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  mentorId  BigInt   @map("mentor_id") @db.UnsignedBigInt
+
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt DateTime @default(now()) @map("updated_at") @db.DateTime(3)
+  createdBy BigInt   @map("created_by") @db.UnsignedBigInt
+  updatedBy BigInt   @map("updated_by") @db.UnsignedBigInt
+
+  deletedAt DateTime? @map("deleted_at") @db.DateTime(3)
+  deletedBy BigInt?   @map("deleted_by") @db.UnsignedBigInt
+
+  mentor    MentorProfile @relation(fields: [mentorId], references: [id])
+
+  appeals   AssessmentAppeal[]
+
+  @@index([mentorId])
+  @@map("assessment")
+}
+
+/// 考核申诉（P3）。
+model AssessmentAppeal {
+  id           BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  assessmentId BigInt   @map("assessment_id") @db.UnsignedBigInt
+
+  createdAt    DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt    DateTime @default(now()) @map("updated_at") @db.DateTime(3)
+  createdBy    BigInt   @map("created_by") @db.UnsignedBigInt
+  updatedBy    BigInt   @map("updated_by") @db.UnsignedBigInt
+
+  deletedAt    DateTime? @map("deleted_at") @db.DateTime(3)
+  deletedBy    BigInt?   @map("deleted_by") @db.UnsignedBigInt
+
+  assessment   Assessment @relation(fields: [assessmentId], references: [id])
+
+  @@index([assessmentId])
+  @@map("assessment_appeal")
+}
+
+/// 双创成果（P3）。竞赛获奖 / 项目立项。
+model Achievement {
+  id        BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  mentorId  BigInt   @map("mentor_id") @db.UnsignedBigInt
+
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt DateTime @default(now()) @map("updated_at") @db.DateTime(3)
+  createdBy BigInt   @map("created_by") @db.UnsignedBigInt
+  updatedBy BigInt   @map("updated_by") @db.UnsignedBigInt
+
+  deletedAt DateTime? @map("deleted_at") @db.DateTime(3)
+  deletedBy BigInt?   @map("deleted_by") @db.UnsignedBigInt
+
+  mentor    MentorProfile @relation(fields: [mentorId], references: [id])
+
+  @@index([mentorId])
+  @@map("achievement")
+}
+
+/// 归档条目（P4）。归档的是「某条业务记录」，类型还没定全，
+/// 所以用 targetType / targetId 弱关联，不建外键。
+model ArchiveItem {
+  id         BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  targetType String   @map("target_type") @db.VarChar(50)
+  targetId   String   @map("target_id") @db.VarChar(50)
+
+  createdAt  DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt  DateTime @default(now()) @map("updated_at") @db.DateTime(3)
+  createdBy  BigInt   @map("created_by") @db.UnsignedBigInt
+  updatedBy  BigInt   @map("updated_by") @db.UnsignedBigInt
+
+  deletedAt  DateTime? @map("deleted_at") @db.DateTime(3)
+  deletedBy  BigInt?   @map("deleted_by") @db.UnsignedBigInt
+
+  @@index([targetType])
+  @@map("archive_item")
+}

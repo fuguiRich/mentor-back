@@ -1,0 +1,11 @@
+node_modules
+dist
+coverage
+.uploads
+.env
+.env.test.local
+*.log
+.DS_Store
+
+# SDD 工作区：基线 / brief / 报告 / 评审包，不进仓库
+.superpowers/
