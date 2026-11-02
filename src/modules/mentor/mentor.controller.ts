@@ -90,14 +90,16 @@ export class MentorController {
       '**upsert**：没有行就建（status = 0 DRAFT），有行就更新草稿列——' +
       '「只能改自己的」不靠入参，靠调用者身份解析（SysUser.username ↔ ' +
       'SyncPerson.login → personId），路径与请求体里都没有 id。' +
-      '**只认 6 个字段**：researchFields / summary / achievements / ' +
-      'guidanceExperience / affiliateOrg / socialRoles；id / personId / ' +
+      '**只认 7 个字段**：researchFields / summary / achievements / ' +
+      'guidanceExperience / affiliateOrg / socialRoles / professionalTitle；' +
+      'id / personId / ' +
       'mentorType / status / 任何未知字段一律 **400 / 10001**（全局 ' +
       'forbidNonWhitelisted）。字段约束（ERR-06 逐字段）：researchFields 自由文本' +
       '数组（Ruling #13 不做字典），每项 ≤ 30 字符、≤ 5 项、允许 []；' +
       'summary / achievements / guidanceExperience 各 ≤ 2000 字符（R48）；' +
       'affiliateOrg / socialRoles 各 ≤ 100 字符，且**仅校外导师保留**——校内导师' +
-      '传了不报错，落库时置 NULL（R49）。' +
+      '传了不报错，落库时置 NULL（R49）；professionalTitle ≤ 100 字符，' +
+      '**内校 / 外校都填**（R28，不置 NULL）。' +
       '**R55 status 门**：status ∈ {0 DRAFT, 3 REJECTED} 才可写；' +
       '1 PENDING / 2 APPROVED / 4 FROZEN / 5 REMOVED 一律 **409 / 31103**' +
       '（已生效的行直接改就把审核流架空了，改字段走 Task 15 的信息修改申请）。' +
@@ -152,7 +154,7 @@ export class MentorController {
   @ApiOperation({
     summary: '后台改导师填报字段（双创学院管理员，必须留痕）',
     description:
-      '双创学院管理员纠正**任意导师**的 6 个可填报字段（审核通过的档案录错了也得能改）。' +
+      '双创学院管理员纠正**任意导师**的 7 个可填报字段（审核通过的档案录错了也得能改）。' +
       '权限码 `mentor:admin-update`；数据范围天花板 **`all`**（不夹窄，角色的 ' +
       'data_scope 自己收窄，越权 **403 / 10003**）。请求体是 `UpdateMentorProfileDto`' +
       '（复用，不复制）：**增量语义**——省略 = 不动、显式 null = 清空、' +
@@ -161,7 +163,7 @@ export class MentorController {
       '但管理员是纠数据，不看流程态——status 0–5 的行都能改。' +
       '**R49**：内校导师的 affiliateOrg / socialRoles 落库恒置 null（不是 400）。' +
       '`:id` 不存在或已软删 → **404 / 31102**。' +
-      '**每次成功都落一行 SysOpLog**（targetType=mentorProfile，before / after 是 6 字段' +
+      '**每次成功都落一行 SysOpLog**（targetType=mentorProfile，before / after 是 7 字段' +
       '完整快照），且与落库**同一次事务**：留痕写失败则字段也回滚（不留痕的修改入口一律不给）。',
   })
   @ApiBody({

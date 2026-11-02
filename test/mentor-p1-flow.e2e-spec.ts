@@ -376,6 +376,7 @@ describe('P1 端到端流程 (e2e)', () => {
       guidanceExperience: row.guidanceExperience,
       affiliateOrg: row.affiliateOrg,
       socialRoles: row.socialRoles,
+      professionalTitle: row.professionalTitle,
     };
   }
 
@@ -389,6 +390,7 @@ describe('P1 端到端流程 (e2e)', () => {
       guidanceExperience: '指导经验一版',
       affiliateOrg: '合作单位一版',
       socialRoles: '社会任职一版',
+      professionalTitle: '职称一版',
       ...overrides,
     };
   }

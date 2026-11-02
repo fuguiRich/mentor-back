@@ -1,8 +1,18 @@
 import { Module } from '@nestjs/common';
 import { GeneralBackModule } from './general-back.module';
+import { AchievementModule } from './modules/achievement/achievement.module';
+import { AppointmentModule } from './modules/appointment/appointment.module';
+import { ArchiveModule } from './modules/archive/archive.module';
+import { AssessmentModule } from './modules/assessment/assessment.module';
 import { MentorApplicationModule } from './modules/mentor-application/mentor-application.module';
 import { MentorMaterialModule } from './modules/mentor-material/mentor-material.module';
 import { MentorModule } from './modules/mentor/mentor.module';
+import { MentorSearchModule } from './modules/mentor-search/mentor-search.module';
+import { MentorSlotModule } from './modules/mentor-slot/mentor-slot.module';
+import { MessageModule } from './modules/message/message.module';
+import { ReviewModule } from './modules/review/review.module';
+import { StatsModule } from './modules/stats/stats.module';
+import { StudentAchievementModule } from './modules/student-achievement/student-achievement.module';
 import { SyncModule } from './modules/sync/sync.module';
 
 /**
@@ -26,6 +36,16 @@ import { SyncModule } from './modules/sync/sync.module';
     MentorModule,
     MentorApplicationModule,
     MentorMaterialModule,
+    MentorSearchModule,
+    MentorSlotModule,
+    AppointmentModule,
+    ReviewModule,
+    AchievementModule,
+    AssessmentModule,
+    StatsModule,
+    ArchiveModule,
+    MessageModule,
+    StudentAchievementModule,
   ],
 })
 export class AppModule {}

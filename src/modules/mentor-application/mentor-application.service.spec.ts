@@ -62,6 +62,7 @@ function profile(
     guidanceExperience: '经验',
     affiliateOrg: '合作单位',
     socialRoles: '社会任职',
+    professionalTitle: '教授',
     createdAt: new Date('2026-10-27T00:00:00.000Z'),
     updatedAt: new Date('2026-10-27T00:00:00.000Z'),
     createdBy: 1n,
@@ -324,7 +325,7 @@ describe('MentorApplicationService.submitOnboard（提交门 + 快照 + 落库�
       expect(input.applicantId).toBe(7n);
       expect(input.profileId).toBe(1n);
       // 快照由 repository 在事务内调 buildSnapshot 取「提交当时的档案」：可填报
-      // 6 字段 + 推导的 mentorType；researchAchievements 翻译成 achievements
+      // 7 字段 + 推导的 mentorType；researchAchievements 翻译成 achievements
       //（R68，翻译在 mentor 模块里，本模块不点名标量名）
       const snapshot = input.buildSnapshot(row);
       expect(snapshot).toEqual({
@@ -335,12 +336,14 @@ describe('MentorApplicationService.submitOnboard（提交门 + 快照 + 落库�
         guidanceExperience: '经验',
         affiliateOrg: '合作单位',
         socialRoles: '社会任职',
+        professionalTitle: '教授',
       });
       expect(Object.keys(snapshot).sort()).toEqual([
         'achievements',
         'affiliateOrg',
         'guidanceExperience',
         'mentorType',
+        'professionalTitle',
         'researchFields',
         'socialRoles',
         'summary',
@@ -461,6 +464,8 @@ describe('MentorApplicationService.submitProfileChange（type=2 提交门 + R67 
       // R49：内校恒置 null——「省略 = 不动」对这两列不成立
       affiliateOrg: null,
       socialRoles: null,
+      // R28：内校也填——不置空，省略 = 不动
+      professionalTitle: '教授',
     });
 
     // 响应：type=2、对外终态恒 2；提交留痕 1 行（targetType='application'）
@@ -505,7 +510,7 @@ describe('MentorApplicationService.submitProfileChange（type=2 提交门 + R67 
     ];
     expect(input.buildSnapshot(row)).toEqual({
       mentorType: 'external',
-      // 省略 = 不动：存的是合并结果的完整 6 字段，不是 DTO 原文
+      // 省略 = 不动：存的是合并结果的完整 7 字段，不是 DTO 原文
       researchFields: ['创新创业'],
       summary: '简介',
       achievements: null,
@@ -513,6 +518,8 @@ describe('MentorApplicationService.submitProfileChange（type=2 提交门 + R67 
       affiliateOrg: '新单位',
       // R49 只对内校置空；校外是增量语义
       socialRoles: '旧任职',
+      // R28：内校 / 外校都填，省略 = 不动
+      professionalTitle: '教授',
     });
   });
 

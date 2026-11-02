@@ -11,7 +11,7 @@ import {
 } from '../../infra/prisma/prisma.service';
 
 /**
- * 草稿的可写列（响应 DTO 的同名 6 个字段）。**没有 status / personId / mentorType**
+ * 草稿的可写列（响应 DTO 的同名 7 个字段）。**没有 status / personId / mentorType**
  * ——它们不是草稿内容（红线）。
  *
  * 键名与 DTO 一致（`achievements` = 研究成果）；Prisma 模型上那一列叫
@@ -27,6 +27,8 @@ export interface MentorProfileDraftWrite {
   guidanceExperience?: string | null;
   affiliateOrg?: string | null;
   socialRoles?: string | null;
+  /** 职称 / 资质（R28）。**内校也填**——不做 R49 置空 */
+  professionalTitle?: string | null;
 }
 
 /**
@@ -69,6 +71,7 @@ function toPrismaDraft(
     guidanceExperience: draft.guidanceExperience,
     affiliateOrg: draft.affiliateOrg,
     socialRoles: draft.socialRoles,
+    professionalTitle: draft.professionalTitle,
   };
 }
 
@@ -148,6 +151,7 @@ export class MentorRepository {
         guidanceExperience: draft.guidanceExperience ?? null,
         affiliateOrg: draft.affiliateOrg ?? null,
         socialRoles: draft.socialRoles ?? null,
+        professionalTitle: draft.professionalTitle ?? null,
         createdBy: 0n,
         updatedBy: 0n,
       },
@@ -176,8 +180,8 @@ export class MentorRepository {
    * 后台改档（Task 18）——**一次事务四步**，拆开就出事：
    *
    * 1. 事务内读旧行（`before` 就是留痕的旧值，判据 3 的时点由事务钉住）；
-   * 2. `buildDraft` 把入参合并到旧值上，得到**完整**的 6 字段新值；
-   * 3. `updateDraft` 写回（只碰这 6 列，`status` / `personId` 一列不碰）；
+   * 2. `buildDraft` 把入参合并到旧值上，得到**完整**的 7 字段新值；
+   * 3. `updateDraft` 写回（只碰这 7 列，`status` / `personId` 一列不碰）；
    * 4. `recordLog` 经**同一个 `tx`** 落留痕——它抛错就整件回滚（R77）。
    *
    * 旧行不存在（含已软删）返回 `null`，由 Service 转 404 / 31102；

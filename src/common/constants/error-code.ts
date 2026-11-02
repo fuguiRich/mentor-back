@@ -106,6 +106,91 @@ export enum ErrorCode {
   // 佐证材料（Task 16+17）：`:materialId` 不存在或已软删 → 404。
   // 与 31104 分开：「申请不存在」与「材料不存在」的处置不同（后者换一条材料重试）
   MENTOR_MATERIAL_NOT_FOUND = 31107,
+
+  // 导师时段 31200-31299（落在 31000-31999 导师段内）。
+  // 预约域在 32000-32999、指导记录在 33000-33999，见文件头段位表。
+  // 时段（Task 21）：`:id` 不存在 / 已软删 / 不属于本人一律 404——**不是 403**，
+  // 别人的时段也要藏住存在性（与预约处理的 31204 刻意相反）。
+  MENTOR_SLOT_NOT_FOUND = 31201,
+  // 时段已关闭 / 与期望时间不符（R15）：Task 23 发起预约时，时段 status=0、
+  // 或 requestedTime 的 weekday / 时段区间对不上 → 409。
+  MENTOR_SLOT_UNAVAILABLE = 31202,
+  // 同一导师同一 weekday 的时段区间相交 → 409。判相交用半开区间 [start, end)：
+  // 09:00-11:00 与 11:00-12:00 首尾相接，不算冲突。
+  // 预约冲突是另一件事，见下面的 32004 APPOINTMENT_SLOT_CONFLICT（预约段）。
+  MENTOR_SLOT_OVERLAP = 31206,
+
+  // 预约 32000-32999（mentor-back，P2 预约域）。
+  // Task 23 只用到 32003 / 32004；32001 / 32002 是 Task 24-28 的码，先占位。
+  // `:id` 不存在 → 404；不是本人 / 不在数据范围 → 403（与时段「藏存在性」相反）。
+  APPOINTMENT_NOT_FOUND = 32001,
+  APPOINTMENT_FORBIDDEN = 32002,
+  // 状态机不允许该操作（R12 合法迁移表之外）→ 409。Task 23 借它表示
+  // 「同一学生对同一导师已有未终态预约」这条去重守卫。
+  APPOINTMENT_TRANSITION_INVALID = 32003,
+  // 该时段已被未终态预约占用（R15 的冲突面）→ 409。
+  APPOINTMENT_SLOT_CONFLICT = 32004,
+  // 预约材料 / 过程材料的 `:materialId` 不存在或已软删 → 404。
+  // 与 32001 分开：「预约不存在」与「材料不存在」的处置不同（后者换一条材料重试）。
+  // 这是**预约材料**专用的码；过程材料用 33002（指导记录段）。
+  APPOINTMENT_MATERIAL_NOT_FOUND = 32005,
+  // 同一 fileId 重复挂到同一预约 / 同一记录 → 409。
+  // 服务层的「先查后插」给这个码；并发双发时 DB-11 生成列唯一键（P2002）兜底，
+  // 同样映射到这里——两条路径同码，前端只需处理一种「已挂接」。
+  APPOINTMENT_MATERIAL_DUPLICATE = 32006,
+
+  // 指导记录 33000-33999（mentor-back，P2 指导记录域）。
+  // Task 26 的 `GET /appointments/:id/record`：记录尚未填报 / 已软删 → 404。
+  GUIDANCE_RECORD_NOT_FOUND = 33001,
+  // **过程材料**（GuidanceMaterial）的 `:materialId` 不存在 / 已软删 → 404。
+  // 与 32005 分开：预约侧沿用「预约材料不存在」，过程材料是另一张表、另一句文案。
+  GUIDANCE_MATERIAL_NOT_FOUND = 33002,
+
+  // 评价 34000-34999（mentor-back，P3 评价域）。
+  // `GET /appointments/:id/review`：该预约还没评价 → 404。
+  // 与 32001 分开：「预约不存在」与「评价不存在」的处置不同。
+  REVIEW_NOT_FOUND = 34001,
+  // 同一预约已有未删评价 → 409（唯一键 `uk_student_review_appointment_active`
+  // 的业务侧表达；并发下 P2002 也兜到同一个码）。
+  REVIEW_ALREADY_EXISTS = 34002,
+  // 预约状态不是 `4 STUDENT_CONFIRMED` → 409。`4 → 6` 与「写评价」同一事务，
+  // 并发的第二个请求在这里被挡下（`updateMany` 的 count = 0）。
+  REVIEW_NOT_ALLOWED = 34003,
+
+  // 双创成果 36000-36999（mentor-back，P3 成果域）。
+  // `:achievementId` 不存在 / 已软删 / 不属于该导师 → 404。
+  ACHIEVEMENT_NOT_FOUND = 36001,
+
+  // 考核 35000-35999（mentor-back，P3 考核域）。
+  // `:id` 不存在 / 已软删 → 404。
+  ASSESSMENT_NOT_FOUND = 35001,
+  // 状态机不允许该操作（合法迁移表之外）→ 409。
+  ASSESSMENT_TRANSITION_INVALID = 35002,
+  // 同一导师同一 `period` 已有考核 → 409（唯一键 `uk_assessment_mentor_period_active`
+  // 的业务侧表达）。
+  ASSESSMENT_PERIOD_TAKEN = 35003,
+  // 考核申诉 `:appealId` 不存在 / 已软删 → 404。
+  ASSESSMENT_APPEAL_NOT_FOUND = 35004,
+  // 同一考核已有待处理申诉 → 409。
+  ASSESSMENT_APPEAL_PENDING = 35005,
+  // 考核状态不允许申诉（只有 `2 APPROVED` 可申诉）→ 409。
+  ASSESSMENT_APPEAL_NOT_ALLOWED = 35006,
+
+  // 归档 37000-37999（mentor-back，P4 归档域）。
+  ARCHIVE_NOT_FOUND = 37001,
+  ARCHIVE_ALREADY_EXISTS = 37002,
+  // 导出结果超过 `export.max_rows`（默认 50000）→ 409，**不静默截断**（R62）。
+  // 静默截断会让「导出名单」少人而无人察觉——报表系统最危险的失败模式。
+  EXPORT_TOO_LARGE = 37004,
+
+  // 消息 38000-38999（mentor-back，P5 消息 / 提醒域）。
+  // 标记别人的消息 / 消息不存在 → 404，**藏存在性**。
+  MESSAGE_NOT_FOUND = 38001,
+
+  // 学生成果 39000-39999（mentor-back，P5 成果关联域）。
+  STUDENT_ACHIEVEMENT_NOT_FOUND = 39001,
+  // 已关联到导师的成果再次 link → 409。
+  STUDENT_ACHIEVEMENT_ALREADY_LINKED = 39002,
 }
 
 /** 各段位的 [起, 止]，供自检单测核对 */
@@ -131,6 +216,7 @@ export const ERROR_CODE_SEGMENTS: ReadonlyArray<readonly [number, number]> = [
   [36000, 36999],
   [37000, 37999],
   [38000, 38999],
+  [39000, 39999],
 ];
 
 /**
@@ -206,4 +292,31 @@ export const ERROR_CODE_DESCRIPTIONS: Record<ErrorCode, string> = {
   // 后者是「去把那条撤了」，前端要能分开提示
   [ErrorCode.MENTOR_APPLICATION_IN_FLIGHT]: '已有在审的申请，不能重复提交',
   [ErrorCode.MENTOR_MATERIAL_NOT_FOUND]: '佐证材料不存在',
+  [ErrorCode.MENTOR_SLOT_NOT_FOUND]: '可指导时段不存在',
+  [ErrorCode.MENTOR_SLOT_UNAVAILABLE]: '可指导时段不可用',
+  [ErrorCode.MENTOR_SLOT_OVERLAP]: '该时段与已有开放时段重叠',
+  [ErrorCode.APPOINTMENT_NOT_FOUND]: '预约不存在',
+  [ErrorCode.APPOINTMENT_FORBIDDEN]: '无权访问该预约',
+  [ErrorCode.APPOINTMENT_TRANSITION_INVALID]: '当前状态不允许该操作',
+  [ErrorCode.APPOINTMENT_SLOT_CONFLICT]: '该时段已被预约占用',
+  [ErrorCode.APPOINTMENT_MATERIAL_NOT_FOUND]: '预约材料不存在',
+  [ErrorCode.APPOINTMENT_MATERIAL_DUPLICATE]: '该材料已挂接',
+  [ErrorCode.GUIDANCE_RECORD_NOT_FOUND]: '指导记录不存在',
+  [ErrorCode.GUIDANCE_MATERIAL_NOT_FOUND]: '过程材料不存在',
+  [ErrorCode.REVIEW_NOT_FOUND]: '该预约还没有评价',
+  [ErrorCode.REVIEW_ALREADY_EXISTS]: '该预约已评价过',
+  [ErrorCode.REVIEW_NOT_ALLOWED]: '当前状态不允许评价',
+  [ErrorCode.ACHIEVEMENT_NOT_FOUND]: '双创成果不存在',
+  [ErrorCode.ASSESSMENT_NOT_FOUND]: '考核不存在',
+  [ErrorCode.ASSESSMENT_TRANSITION_INVALID]: '当前状态不允许该操作',
+  [ErrorCode.ASSESSMENT_PERIOD_TAKEN]: '该导师本周期已有考核',
+  [ErrorCode.ASSESSMENT_APPEAL_NOT_FOUND]: '考核申诉不存在',
+  [ErrorCode.ASSESSMENT_APPEAL_PENDING]: '该考核已有待处理的申诉',
+  [ErrorCode.ASSESSMENT_APPEAL_NOT_ALLOWED]: '当前考核状态不允许申诉',
+  [ErrorCode.ARCHIVE_NOT_FOUND]: '归档条目不存在',
+  [ErrorCode.ARCHIVE_ALREADY_EXISTS]: '该记录已归档',
+  [ErrorCode.EXPORT_TOO_LARGE]: '导出结果超过上限，请缩小查询范围',
+  [ErrorCode.MESSAGE_NOT_FOUND]: '消息不存在',
+  [ErrorCode.STUDENT_ACHIEVEMENT_NOT_FOUND]: '学生成果不存在',
+  [ErrorCode.STUDENT_ACHIEVEMENT_ALREADY_LINKED]: '该成果已关联导师',
 };

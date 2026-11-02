@@ -234,6 +234,7 @@ describe('导师专业档案 (e2e)', () => {
       guidanceExperience: row.guidanceExperience,
       affiliateOrg: row.affiliateOrg,
       socialRoles: row.socialRoles,
+      professionalTitle: row.professionalTitle,
     };
   }
 
@@ -247,6 +248,7 @@ describe('导师专业档案 (e2e)', () => {
       guidanceExperience: '指导经验一版',
       affiliateOrg: '合作单位一版',
       socialRoles: '社会任职一版',
+      professionalTitle: '职称一版',
       ...overrides,
     };
   }
@@ -275,6 +277,8 @@ describe('导师专业档案 (e2e)', () => {
     expect(rows[0].status).toBe(0);
     expect(rows[0].personId).toBe(personId('mentor-a'));
     expect(rows[0].summary).toBe('简介初稿');
+    // R28：职称 / 资质随档案一起落库（内校也填）
+    expect(rows[0].professionalTitle).toBe('职称一版');
   });
 
   it('判据 3：再次 PUT（更新）→ 200；仍是 1 行（不重复建），字段被改写', async () => {
@@ -309,6 +313,8 @@ describe('导师专业档案 (e2e)', () => {
       // 判据 6 的前站：校内导师的这两个字段恒 null（R49）
       affiliateOrg: null,
       socialRoles: null,
+      // R28：内校也填——不被置 null
+      professionalTitle: '职称一版',
       status: 0,
     });
   });
@@ -415,6 +421,18 @@ describe('导师专业档案 (e2e)', () => {
     expect(body.data.fields.some((f) => f.field === 'affiliateOrg')).toBe(true);
   });
 
+  it('判据 10b（R28）：professionalTitle 101 字符 → 400 / 10001，data.fields 点名该字段', async () => {
+    const response = await api('mentor-a')
+      .put('/mentor/profile')
+      .send(fullDraft({ professionalTitle: 'a'.repeat(101) }))
+      .expect(400);
+    const body = response.body as ResponseEnvelope<{ fields: FieldErrorDto[] }>;
+    expect(body.code).toBe(ErrorCode.PARAM_INVALID);
+    expect(body.data.fields.some((f) => f.field === 'professionalTitle')).toBe(
+      true,
+    );
+  });
+
   it('判据 11：请求体塞 status: 2 → 400 / 10001，库里 status 仍是 0', async () => {
     const before = await readRow('mentor-a');
     expect(before?.status).toBe(0);
@@ -485,7 +503,7 @@ describe('导师专业档案 (e2e)', () => {
     expect(afterB).toEqual(beforeB);
   });
 
-  it('判据 15：R55 status 门——库里置 status=2，PUT → 409 / 31103，6 个可填报字段逐字不变', async () => {
+  it('判据 15：R55 status 门——库里置 status=2，PUT → 409 / 31103，7 个可填报字段逐字不变', async () => {
     const before = await readRow('mentor-c');
     expect(before).not.toBeNull();
     const fieldsBefore = draftFields(before as MentorProfile);
@@ -543,6 +561,7 @@ describe('导师专业档案 (e2e)', () => {
       guidanceExperience: '指导经验一版',
       affiliateOrg: '某某研究院',
       socialRoles: '某某学会理事',
+      professionalTitle: '职称一版',
     });
   });
 

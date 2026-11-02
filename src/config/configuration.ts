@@ -1,5 +1,23 @@
 export interface AppConfig {
   port: number;
+  app: {
+    /**
+     * 业务「墙钟时间」的时区（IANA 名，如 `Asia/Shanghai`）。
+     *
+     * 导师开的时段是「每周重复的墙钟时间」，本身不带时区；预约的
+     * `requestedTime` 是 UTC 时刻。比对前必须把后者转成本时区（R31）。
+     */
+    timezone: string;
+    appointmentExpiry: {
+      /**
+       * 预约超时扫描的定时器是否启动。**不配时按环境走**：`NODE_ENV=test` 关、
+       * 其余开。测试要确定性：扫描方法由用例直接调，定时器不该在后台改库态。
+       */
+      enabled: boolean;
+      /** 扫描间隔（秒）。默认 300 */
+      intervalSeconds: number;
+    };
+  };
   database: { url: string };
   redis: { url: string };
   jwt: { secret: string; accessTtlSeconds: number; refreshTtlSeconds: number };
@@ -63,11 +81,35 @@ function parseSwaggerEnabled(env: NodeJS.ProcessEnv): boolean {
   return raw === '1' || raw === 'true';
 }
 
+/**
+ * `APPOINTMENT_EXPIRY_SCAN_ENABLED` 的解析。不配（或空串）时**测试环境关、
+ * 其余开**：e2e 用 `NODE_ENV=test`（Jest 默认置位），定时器不能在后台把用例
+ * 造出来的 `0 PENDING` 行扫成 `9 EXPIRED`。扫描方法本身照常可调。
+ */
+function parseAppointmentExpiryEnabled(env: NodeJS.ProcessEnv): boolean {
+  const raw = env.APPOINTMENT_EXPIRY_SCAN_ENABLED?.trim().toLowerCase();
+  if (raw === undefined || raw === '') {
+    return env.NODE_ENV !== 'test';
+  }
+  return raw === '1' || raw === 'true';
+}
+
 export default (): AppConfig => {
   const env = process.env;
 
   return {
     port: Number(env.PORT ?? 3000),
+    app: {
+      // R31：时段是墙钟时间，按本时区解释。空串与不配同路（`||` 而非 `??`）：
+      // `Intl.DateTimeFormat` 收到 '' 会抛 RangeError，那会让每个预约请求 500。
+      timezone: env.APP_TIMEZONE || 'Asia/Shanghai',
+      appointmentExpiry: {
+        enabled: parseAppointmentExpiryEnabled(env),
+        intervalSeconds: Number(
+          env.APPOINTMENT_EXPIRY_SCAN_INTERVAL_SECONDS || 300,
+        ),
+      },
+    },
     database: { url: env.DATABASE_URL as string },
     redis: { url: env.REDIS_URL as string },
     jwt: {

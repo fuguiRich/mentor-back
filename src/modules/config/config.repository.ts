@@ -44,6 +44,16 @@ export class ConfigRepository {
     });
   }
 
+  /**
+   * 按编码取**任意状态**的那条（写入路径用）。
+   *
+   * `findByCode` 只认 `status = 1`；停用的同 code 行仍占着
+   * `uk_sys_config_code_active`，直接 create 会撞唯一键。
+   */
+  async findAnyByCode(code: string): Promise<SysConfig | null> {
+    return this.prisma.client.sysConfig.findFirst({ where: { code } });
+  }
+
   /** 同编码的配置是否已存在（uk_sys_config_code_active） */
   async existsByCode(code: string, excludeId?: bigint): Promise<boolean> {
     const found = await this.prisma.client.sysConfig.findFirst({

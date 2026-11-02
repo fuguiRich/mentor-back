@@ -166,7 +166,7 @@ export class MentorApplicationService {
    *
    * 写入（一次事务，只有申请行，**不碰** `MentorProfile`）：`snapshot` 存
    * **R67 的合并结果**——DTO 是增量语义（省略 = 不动、null = 清空、数组 = 整体
-   * 替换），合并到当前档案 6 字段上才得到「改完之后的完整样子」；落库后永不
+   * 替换），合并到当前档案 7 字段上才得到「改完之后的完整样子」；落库后永不
    * 改写（红线 9）。成功留痕 1 行（`targetType='application'`，§4）。
    */
   async submitProfileChange(
@@ -225,13 +225,14 @@ export class MentorApplicationService {
 
   /**
    * R67 的合并（brief §2 的「不写就会长歪」）：`snapshot` 存**改完之后的完整
-   * 6 字段**，不是 DTO 原文。增量语义逐字段落：
+   * 7 字段**，不是 DTO 原文。增量语义逐字段落：
    * `undefined` = 不动、`null` = 清空、`researchFields` 传数组 = 整体替换。
-   * 不合并就存 DTO 原文的话，一次只改 `summary` 的提案一通过，其余 5 个字段
+   * 不合并就存 DTO 原文的话，一次只改 `summary` 的提案一通过，其余 7 个字段
    * 会被写成 `undefined`/`null`——数据损坏。
    *
    * R49 在这里收口：`mentorType='internal'` 的 `affiliateOrg` / `socialRoles`
-   * **恒置 `null`**（「省略 = 不动」对这两列不成立）。
+   * **恒置 `null`**（「省略 = 不动」对这两列不成立）。`professionalTitle`（R28）
+   * **不受此限**——内校也照常合并。
    */
   private mergeChangeDraft(
     dto: UpdateMentorProfileDto,
@@ -260,6 +261,11 @@ export class MentorApplicationService {
           ? current.socialRoles
           : dto.socialRoles
         : null,
+      // R28：内校 / 外校都填，不置空
+      professionalTitle:
+        dto.professionalTitle === undefined
+          ? current.professionalTitle
+          : dto.professionalTitle,
     };
   }
 

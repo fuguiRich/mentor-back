@@ -115,7 +115,7 @@ export class MentorService {
    * `$transaction` 里（repository 的 `adminUpdateProfile`），`opLog.record`
    * 传了 `tx`，写日志失败整件回滚（R77）。
    *
-   * 快照是 6 个字段的**完整值**（不是差集）：入参是增量语义，所以先在事务里
+   * 快照是 7 个字段的**完整值**（不是差集）：入参是增量语义，所以先在事务里
    * 读旧行，再把 dto 合并上去得到完整新值——`before` / `after` 都不会出现
    * 「dto 没给的字段是 undefined」。
    *
@@ -169,7 +169,7 @@ export class MentorService {
                 ? {}
                 : { userAgent: meta.userAgent }),
               status: 1,
-              // 完整快照（6 字段），不是差集；键名翻译在 mapper（R68）
+              // 完整快照（7 字段），不是差集；键名翻译在 mapper（R68）
               before: toProfileFieldSnapshot(before),
               after: toProfileFieldSnapshot(after),
               durationMs: Date.now() - started,
@@ -196,6 +196,7 @@ export class MentorService {
    *
    * `mentorType = 'internal'` 的档案，`affiliateOrg` / `socialRoles` **恒置 null**
    * （不是 400）——内校导师没有合作单位与社会任职，管理员也不能替它填。
+   * `professionalTitle`（R28）**不受此限**：内校也照常合并，不置 null。
    */
   private mergeAdminDraft(
     dto: UpdateMentorProfileDto,
@@ -224,6 +225,11 @@ export class MentorService {
           ? current.socialRoles
           : dto.socialRoles
         : null,
+      // R28：内校 / 外校都填，不置空
+      professionalTitle:
+        dto.professionalTitle === undefined
+          ? current.professionalTitle
+          : dto.professionalTitle,
     };
   }
 
@@ -324,7 +330,7 @@ export class MentorService {
    * 社会任职，留着就是脏数据。为什么不报 400：那会让「从校外转内校」的人
    * 拿着一个合法表单死活交不上去。
    *
-   * 其余四列是增量语义：`undefined` = 不动（建行时落 NULL / `[]`）。
+   * 其余五列是增量语义：`undefined` = 不动（建行时落 NULL / `[]`）。
    */
   private buildDraft(
     dto: UpdateMentorProfileDto,
@@ -339,6 +345,8 @@ export class MentorService {
       // R49：内校置空——传了也丢掉（不是 400）
       affiliateOrg: isExternal ? dto.affiliateOrg : null,
       socialRoles: isExternal ? dto.socialRoles : null,
+      // R28：内校 / 外校都填，不置空
+      professionalTitle: dto.professionalTitle,
     };
   }
 

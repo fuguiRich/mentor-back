@@ -48,6 +48,7 @@ export function toProfileDraft(
     guidanceExperience: current.guidanceExperience,
     affiliateOrg: current.affiliateOrg,
     socialRoles: current.socialRoles,
+    professionalTitle: current.professionalTitle,
   };
 }
 
@@ -55,6 +56,9 @@ export function toProfileDraft(
  * `snapshot` JSON 列 → 响应形状。只做形状归一，**不改值**（快照不可变）。
  * 导出给 review.service 的落地写用（Task 15）：写回的值从 `snapshot` 取，
  * 归一后逐字段搬运（红线 9），不重读当前行、不改写已落库的快照。
+ *
+ * **旧快照兼容（Task 20c / R28）**：`professionalTitle` 是后加的键，Task 20c
+ * 之前落库的快照没有它——`toStringOrNull(undefined)` 返回 `null`，**不抛错**。
  */
 export function normalizeProfileDraft(value: unknown): MentorProfileDraft {
   const draft = (value ?? {}) as Record<string, unknown>;
@@ -66,6 +70,7 @@ export function normalizeProfileDraft(value: unknown): MentorProfileDraft {
     guidanceExperience: toStringOrNull(draft.guidanceExperience),
     affiliateOrg: toStringOrNull(draft.affiliateOrg),
     socialRoles: toStringOrNull(draft.socialRoles),
+    professionalTitle: toStringOrNull(draft.professionalTitle),
   };
 }
 

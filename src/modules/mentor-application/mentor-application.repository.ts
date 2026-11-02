@@ -57,7 +57,7 @@ export const IN_FLIGHT_APPLICATION_STATUSES: readonly number[] = [
 /**
  * 信息修改申请的落库载荷（Task 15）——`type=2` / `status` / `submittedAt` 由
  * 服务端定死，不来自入参。`buildSnapshot` 在**事务内**被调用，拿到的是回读的
- * 当前档案行——R67 的「DTO 增量合并到当前 6 字段」就在那个时点做。
+ * 当前档案行——R67 的「DTO 增量合并到当前 7 字段」就在那个时点做。
  */
 export interface ProfileChangeSubmissionInput {
   applicantId: bigint;
@@ -137,7 +137,7 @@ export interface TransitionInput {
   profileStatus: number | null;
   /**
    * type=2 的 `6 APPROVED` 生效落地（Task 15，brief §3 / §4）：只在那一支给。
-   * `writeProfile` 在**同一事务内**写 6 个可填报字段（数据源只能是 snapshot，
+   * `writeProfile` 在**同一事务内**写 7 个可填报字段（数据源只能是 snapshot，
    * 红线 9）；`recordLogs` 在回读申请行之后、事务提交之前调用，两笔日志经
    * **同一个 `tx`** 落库（R76）——业务回滚则两行日志一起没（红线 16）。
    * 传 `tx` 的 `OpLogService.record` 错误外抛（R77 分岔）：留痕失败整件回滚，
@@ -146,6 +146,21 @@ export interface TransitionInput {
   landing?: {
     writeProfile: (tx: PrismaTx) => Promise<void>;
     recordLogs: (after: MentorApplication, tx: PrismaTx) => Promise<void>;
+  };
+  /**
+   * 审核通过时**同事务**落一条归档（P4 Task 52 / R66）。
+   *
+   * 不同事务的话，「审核过了但没归档」会成为一个真实可达的状态——
+   * 而 §4.7 要求「审核通过材料**统一**归档」，靠人补是做不到「统一」的。
+   * 幂等：同一 `(targetType, targetId)` 已存在未删行时跳过，重复审核不报错。
+   */
+  archive?: {
+    targetType: string;
+    targetId: string;
+    title: string;
+    mentorId: bigint | null;
+    deptId: bigint | null;
+    category: string;
   };
 }
 
@@ -390,7 +405,7 @@ export class MentorApplicationRepository {
         });
       }
 
-      // Task 15：type=2 的 6 APPROVED 落地——6 个可填报字段写回同一次事务
+      // Task 15：type=2 的 6 APPROVED 落地——7 个可填报字段写回同一次事务
       // （status 一列不碰，§0.5）。写在状态机之后：申请先落定，回写才有据。
       if (input.landing !== undefined) {
         await input.landing.writeProfile(tx);
@@ -404,6 +419,33 @@ export class MentorApplicationRepository {
       if (row !== null && input.landing !== undefined) {
         await input.landing.recordLogs(row, tx);
       }
+
+      // P4 Task 52：审核通过的归档与状态推进**同一事务**（R66）
+      if (input.archive !== undefined) {
+        const existing = await tx.archiveItem.findFirst({
+          where: {
+            targetType: input.archive.targetType,
+            targetId: input.archive.targetId,
+          },
+        });
+        if (existing === null) {
+          await tx.archiveItem.create({
+            data: {
+              targetType: input.archive.targetType,
+              targetId: input.archive.targetId,
+              title: input.archive.title,
+              mentorId: input.archive.mentorId,
+              deptId: input.archive.deptId,
+              category: input.archive.category,
+              core: 1,
+              archivedAt: new Date(),
+              createdBy: 0n,
+              updatedBy: 0n,
+            },
+          });
+        }
+      }
+
       return row;
     });
   }

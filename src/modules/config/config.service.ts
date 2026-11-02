@@ -134,6 +134,33 @@ export class ConfigService {
     return row.value === 'true';
   }
 
+  /**
+   * 按编码写数值（业务规则的写入口，如 §6.6 的考核权重）。
+   *
+   * 与 `create` / `update` 的差别：调用方只关心「这个 code 现在等于多少」，
+   * 不需要先知道行 ID。停用的同 code 行会被**重新启用**，而不是撞唯一键。
+   */
+  async setNumber(code: string, name: string, value: number): Promise<void> {
+    const text = String(value);
+    const existing = await this.repository.findAnyByCode(code);
+    if (existing === null) {
+      await this.repository.create({
+        code,
+        name,
+        value: text,
+        valueType: 'number',
+        status: 1,
+      });
+      return;
+    }
+    await this.repository.update(existing.id, {
+      name,
+      value: text,
+      valueType: 'number',
+      status: 1,
+    });
+  }
+
   // ── 断言与错误 ────────────────────────────────────────────────
 
   private async assertExists(id: bigint) {

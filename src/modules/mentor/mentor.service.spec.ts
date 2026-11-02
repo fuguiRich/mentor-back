@@ -59,6 +59,7 @@ function profile(
     guidanceExperience: '经验',
     affiliateOrg: '合作单位',
     socialRoles: '社会任职',
+    professionalTitle: '教授',
     createdAt: new Date('2026-10-27T00:00:00.000Z'),
     updatedAt: new Date('2026-10-27T00:00:00.000Z'),
     createdBy: 1n,
@@ -154,6 +155,7 @@ function buildService(
               guidanceExperience: draft.guidanceExperience ?? null,
               affiliateOrg: draft.affiliateOrg ?? null,
               socialRoles: draft.socialRoles ?? null,
+              professionalTitle: draft.professionalTitle ?? null,
             }),
         ),
     );
@@ -170,6 +172,7 @@ function buildService(
               guidanceExperience: draft.guidanceExperience ?? '经验',
               affiliateOrg: draft.affiliateOrg ?? '合作单位',
               socialRoles: draft.socialRoles ?? '社会任职',
+              professionalTitle: draft.professionalTitle ?? '教授',
             }),
         ),
     );
@@ -213,6 +216,10 @@ function buildService(
             draft.socialRoles === undefined
               ? before.socialRoles
               : draft.socialRoles,
+          professionalTitle:
+            draft.professionalTitle === undefined
+              ? before.professionalTitle
+              : draft.professionalTitle,
         });
         await input.recordLog(before, after, tx);
         return after;
@@ -483,7 +490,7 @@ describe('MentorService.upsertMyProfile（upsert + R55 status 门 + R49）', () 
 describe('MentorService.adminUpdateProfile（Task 18 后台改档 + 留痕）', () => {
   const meta = { method: 'PUT', path: '/mentor/profiles/1' };
 
-  it('合并到旧值：dto 没给的字段保留旧值；before / after 都是 6 字段完整快照', async () => {
+  it('合并到旧值：dto 没给的字段保留旧值；before / after 都是 7 字段完整快照', async () => {
     const h = buildService({
       scope: { kind: 'all' },
       adminBefore: profile(1n, 7n, 2, {
@@ -518,7 +525,7 @@ describe('MentorService.adminUpdateProfile（Task 18 后台改档 + 留痕）', 
       targetId: '1',
       status: 1,
     });
-    // 判据 2 / 3：before 是改动前的完整 6 字段，after 是改动后的完整 6 字段
+    // 判据 2 / 3：before 是改动前的完整 7 字段，after 是改动后的完整 7 字段
     expect(input.before).toEqual({
       researchFields: ['旧方向'],
       summary: '旧简介',
@@ -526,6 +533,7 @@ describe('MentorService.adminUpdateProfile（Task 18 后台改档 + 留痕）', 
       guidanceExperience: '旧经验',
       affiliateOrg: null,
       socialRoles: null,
+      professionalTitle: '教授',
     });
     expect(input.after).toEqual({
       researchFields: ['旧方向'],
@@ -534,6 +542,7 @@ describe('MentorService.adminUpdateProfile（Task 18 后台改档 + 留痕）', 
       guidanceExperience: '旧经验',
       affiliateOrg: null,
       socialRoles: null,
+      professionalTitle: '教授',
     });
     // R76：留痕与落库同一个事务句柄
     expect(txArg).toBe(h.tx);

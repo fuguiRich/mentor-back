@@ -125,6 +125,7 @@ describe('后台改导师填报字段 (e2e)', () => {
       guidanceExperience: '原经验',
       affiliateOrg: null,
       socialRoles: null,
+      professionalTitle: '副教授',
     });
     externalProfileId = await seedProfile('edit-external', 2, {
       researchFields: ['外部方向'],
@@ -133,6 +134,7 @@ describe('后台改导师填报字段 (e2e)', () => {
       guidanceExperience: '外经验',
       affiliateOrg: '原单位',
       socialRoles: '原任职',
+      professionalTitle: '教授',
     });
     deletedProfileId = await seedProfile('edit-deleted', 2, {
       summary: '已软删的档案',
@@ -205,6 +207,7 @@ describe('后台改导师填报字段 (e2e)', () => {
       guidanceExperience: string;
       affiliateOrg: string | null;
       socialRoles: string | null;
+      professionalTitle: string | null;
     }> = {},
   ): Promise<bigint> {
     const person = people.get(login);
@@ -221,6 +224,7 @@ describe('后台改导师填报字段 (e2e)', () => {
         guidanceExperience: overrides.guidanceExperience ?? null,
         affiliateOrg: overrides.affiliateOrg ?? null,
         socialRoles: overrides.socialRoles ?? null,
+        professionalTitle: overrides.professionalTitle ?? null,
         createdBy: 0n,
         updatedBy: 0n,
       },
@@ -289,10 +293,11 @@ describe('后台改导师填报字段 (e2e)', () => {
       guidanceExperience: row.guidanceExperience,
       affiliateOrg: row.affiliateOrg,
       socialRoles: row.socialRoles,
+      professionalTitle: row.professionalTitle,
     };
   }
 
-  it('判据 1 + 2 + 3：管理员改 summary → 200；库里字段已改，status / personId 逐字不变；留痕 before / after 是 6 字段完整快照', async () => {
+  it('判据 1 + 2 + 3：管理员改 summary → 200；库里字段已改，status / personId 逐字不变；留痕 before / after 是 7 字段完整快照', async () => {
     const before = await readProfile(internalProfileId);
     if (before === null) {
       throw new Error('内部导师档案未种出');
@@ -317,6 +322,7 @@ describe('后台改导师填报字段 (e2e)', () => {
       guidanceExperience: '原经验',
       affiliateOrg: null,
       socialRoles: null,
+      professionalTitle: '副教授',
       status: 2,
     });
 
@@ -348,6 +354,7 @@ describe('后台改导师填报字段 (e2e)', () => {
       guidanceExperience: '原经验',
       affiliateOrg: null,
       socialRoles: null,
+      professionalTitle: '副教授',
     });
     expect(log.after).toEqual({
       researchFields: ['方向一', '方向二'],
@@ -356,6 +363,7 @@ describe('后台改导师填报字段 (e2e)', () => {
       guidanceExperience: '原经验',
       affiliateOrg: null,
       socialRoles: null,
+      professionalTitle: '副教授',
     });
   });
 

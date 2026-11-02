@@ -110,6 +110,16 @@ export class MentorProfileResponseDto {
   socialRoles!: string | null;
 
   @ApiProperty({
+    type: String,
+    description:
+      '职称 / 资质，自由文本，≤ 100 字符（R28）。**内校 / 外校都填**——' +
+      '与 affiliateOrg / socialRoles 不同，内校不置 NULL',
+    example: '教授',
+    nullable: true,
+  })
+  professionalTitle!: string | null;
+
+  @ApiProperty({
     description:
       '档案状态：0 DRAFT | 1 PENDING | 2 APPROVED | 3 REJECTED | 4 FROZEN | 5 REMOVED。' +
       '**由审核流驱动，接口不得直接改**——请求体里出现 status 一律 400（10001）',
@@ -120,7 +130,7 @@ export class MentorProfileResponseDto {
 }
 
 /**
- * `PUT /mentor/profile` 的入参白名单——**只认这 6 个字段**（红线）。
+ * `PUT /mentor/profile` 的入参白名单——**只认这 7 个字段**（红线）。
  *
  * `id` / `personId` / `mentorType` / `status` 一律不收：它们分别由行标识、
  * 身份链（SysUser.username ↔ SyncPerson.login）与审核流决定，接口不得改。
@@ -212,4 +222,18 @@ export class UpdateMentorProfileDto {
   @IsString({ message: '社会任职必须是字符串' })
   @MaxLength(100, { message: '社会任职最多 100 个字符' })
   socialRoles?: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    description:
+      '职称 / 资质，自由文本，**≤ 100 字符**（R28），可空。' +
+      '**内校 / 外校都有效**（与 affiliateOrg / socialRoles 不同，不置 NULL）；' +
+      '省略 = 不动，null = 清空',
+    example: '教授',
+    nullable: true,
+  })
+  @IsOptional()
+  @IsString({ message: '职称资质必须是字符串' })
+  @MaxLength(100, { message: '职称资质最多 100 个字符' })
+  professionalTitle?: string | null;
 }

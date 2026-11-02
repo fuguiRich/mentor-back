@@ -143,7 +143,7 @@ export class MentorApplicationController {
   @ApiOperation({
     summary: '提交信息修改申请（把拟改字段打包送审）',
     description:
-      '已入驻导师（`MentorProfile.status = 2`）改自己的 6 个可填报字段——' +
+      '已入驻导师（`MentorProfile.status = 2`）改自己的 7 个可填报字段——' +
       '**不能直接落库**，打包成提案走两级审（二级学院 → 双创学院），' +
       '生效那一刻才写回 `MentorProfile`（R55：status=2 时 `PUT /mentor/profile` ' +
       '已关）。请求体是 Task 11 的 `UpdateMentorProfileDto`（复用，不复制）：' +

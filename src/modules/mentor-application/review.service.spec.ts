@@ -302,6 +302,7 @@ function profileRow(id: bigint, personId: bigint): MentorProfile {
     guidanceExperience: '旧经验',
     affiliateOrg: '旧单位',
     socialRoles: '旧任职',
+    professionalTitle: '旧职称',
     createdAt: new Date('2026-10-27T00:00:00.000Z'),
     updatedAt: new Date('2026-10-27T00:00:00.000Z'),
     createdBy: 1n,
@@ -644,6 +645,7 @@ describe('ReviewService 状态机（14 组：[1]–[10] 合法边 + [D1]–[D4] 
       guidanceExperience: '新经验',
       affiliateOrg: '新单位',
       socialRoles: '新任职',
+      professionalTitle: '新职称',
     };
     const h = buildService({
       application: applicationDetail(
@@ -662,7 +664,7 @@ describe('ReviewService 状态机（14 组：[1]–[10] 合法边 + [D1]–[D4] 
       META,
     );
 
-    // 写回的数据源只能是 snapshot（红线 9）：6 个可填报字段逐字来自提案，
+    // 写回的数据源只能是 snapshot（红线 9）：7 个可填报字段逐字来自提案，
     // status / mentorType 一列不碰
     const [profileId, writeback] = h.updateDraft.mock.calls[0] as [
       bigint,
@@ -676,6 +678,7 @@ describe('ReviewService 状态机（14 组：[1]–[10] 合法边 + [D1]–[D4] 
       guidanceExperience: '新经验',
       affiliateOrg: '新单位',
       socialRoles: '新任职',
+      professionalTitle: '新职称',
     });
 
     // 时序（红线 16）：先写回、再落留痕
@@ -684,7 +687,7 @@ describe('ReviewService 状态机（14 组：[1]–[10] 合法边 + [D1]–[D4] 
     );
 
     // 两笔留痕（brief §4）：行 1 targetType='application' + 行 2 'mentorProfile'
-    // （6 字段旧值 / 新值完整快照，不是差集）
+    // （7 字段旧值 / 新值完整快照，不是差集）
     expect(h.opLogRecord).toHaveBeenCalledTimes(2);
     const calls = h.opLogRecord.mock.calls as Array<[Record<string, unknown>]>;
     const [row1, row2] = calls.map(([input]) => input);
@@ -716,6 +719,7 @@ describe('ReviewService 状态机（14 组：[1]–[10] 合法边 + [D1]–[D4] 
       guidanceExperience: '旧经验',
       affiliateOrg: '旧单位',
       socialRoles: '旧任职',
+      professionalTitle: '旧职称',
     });
     expect(row2.after).toEqual(writeback);
   });

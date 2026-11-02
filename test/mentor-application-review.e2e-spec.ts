@@ -426,6 +426,7 @@ describe('两级审核流 (e2e)', () => {
       guidanceExperience: '指导经验一版',
       affiliateOrg: '合作单位一版',
       socialRoles: '社会任职一版',
+      professionalTitle: '职称一版',
       ...overrides,
     };
   }
@@ -921,7 +922,7 @@ describe('两级审核流 (e2e)', () => {
       .expect(404);
   });
 
-  it('判据 19：路由面恰好 5 条；docs:gen 47 路径 / 64 操作（不多不少）', () => {
+  it('判据 19：路由面恰好 5 条；docs:gen 85 路径 / 112 操作（不多不少）', () => {
     const document = buildDocument(app);
     const methodsOf = (path: string): string[] => {
       const item = document.paths[path] as Record<string, unknown> | undefined;
@@ -943,14 +944,33 @@ describe('两级审核流 (e2e)', () => {
     // 判据 19 的总数契约（docs:gen 门槛钉同一对数字）。
     // Task 15 加了 POST /mentor-applications/profile-change：+1 路径 +1 操作（41/57 → 42/58）；
     // Task 16+17 的佐证材料面再加 4 路径 / 5 操作（42/58 → 46/63）；
-    // Task 18 的后台改档 PUT /mentor/profiles/{id} 再加 1 路径 / 1 操作（46/63 → 47/64）
+    // Task 18 的后台改档 PUT /mentor/profiles/{id} 再加 1 路径 / 1 操作（46/63 → 47/64）；
+    // Task 21 的时段管理 /mentor/slots + /mentor/slots/{id} 再加 2 路径 / 4 操作（47/64 → 49/68）；
+    // Task 22 的导师检索 /mentors + /mentors/{id} 再加 2 路径 / 2 操作（49/68 → 51/70）；
+    // Task 23 的发起预约 POST /appointments 再加 1 路径 / 1 操作（51/70 → 52/71）；
+    // Task 24 的预约处理 confirm / reject / reschedule 再加 3 路径 / 3 操作（52/71 → 55/74）；
+    // Task 25 的学生取消 POST /appointments/{id}/cancel 再加 1 路径 / 1 操作（55/74 → 56/75）；
+    // Task 26 的指导记录 POST + GET /appointments/{id}/record 再加 1 路径 / 2 操作（56/75 → 57/77）；
+    // Task 27 的学生确认记录 / 提异议（confirm-record、dispute，各 1 个 POST）
+    // 再加 2 路径 / 2 操作（57/77 → 59/79）；
+    // Task 28 的异议复核 POST /appointments/{id}/adjudicate 再加 1 路径 / 1 操作
+    // （59/79 → 60/80）；
+    // Task 29 的预约材料 / 过程材料再加 4 路径 / 5 操作（60/80 → 64/85）；
+    // Task 30 的预约列表 + 详情：`GET /appointments` 与既有 POST 同一条路径
+    // （只 +1 操作）、`GET /appointments/{id}` 是新路径（+1 路径 +1 操作）
+    // （64/85 → 65/87）；
+    // P3 Task 34 的评价再加 2 路径 / 3 操作（`/appointments/{id}/review` 的 post+get、
+    // `/mentors/{mentorId}/reviews` 的 get）（65/87 → 67/90）；
+    // P3 Task 36 的成果再加 2 路径 / 4 操作（67/90 → 69/94）
+    // P4 的统计 / 导出 / 归档：85/112 → 88/118
+    // P5 的学期规则 / 消息 / 学生成果：88/118 → 97/129
     const paths = Object.keys(document.paths);
-    expect(paths).toHaveLength(47);
+    expect(paths).toHaveLength(97);
     let operations = 0;
     for (const path of paths) {
       operations += methodsOf(path).length;
     }
-    expect(operations).toBe(64);
+    expect(operations).toBe(129);
   });
 
   it('补 P2-A：deptAndChildren 的 college-admin-a 审外院申请 → 403 / 10003，申请行逐字不变', async () => {

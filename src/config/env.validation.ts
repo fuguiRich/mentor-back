@@ -107,6 +107,30 @@ export function validateEnv(
     );
   }
 
+  // 超时扫描定时器：拼错开关 = 以为关了其实在扫（或反过来）。同 SWAGGER_ENABLED，
+  // 不猜，让进程起不来。
+  const expiryScanRaw = raw.APPOINTMENT_EXPIRY_SCAN_ENABLED;
+  const expiryScanValue =
+    typeof expiryScanRaw === 'string' ? expiryScanRaw.trim().toLowerCase() : '';
+  if (
+    expiryScanValue !== '' &&
+    !['1', '0', 'true', 'false'].includes(expiryScanValue)
+  ) {
+    problems.push(
+      `APPOINTMENT_EXPIRY_SCAN_ENABLED 只能是 1 / 0 / true / false：${expiryScanValue}`,
+    );
+  }
+
+  const expiryIntervalRaw = raw.APPOINTMENT_EXPIRY_SCAN_INTERVAL_SECONDS;
+  if (expiryIntervalRaw !== undefined && expiryIntervalRaw !== '') {
+    const seconds = Number(expiryIntervalRaw);
+    if (!Number.isInteger(seconds) || seconds <= 0) {
+      problems.push(
+        `APPOINTMENT_EXPIRY_SCAN_INTERVAL_SECONDS 必须是正整数秒数：${String(raw.APPOINTMENT_EXPIRY_SCAN_INTERVAL_SECONDS)}`,
+      );
+    }
+  }
+
   const port = Number(raw.PORT ?? 3000);
   if (!Number.isInteger(port) || port <= 0 || port > 65535) {
     problems.push(`PORT 不是合法端口号：${String(raw.PORT)}`);
@@ -155,6 +179,18 @@ export function validateEnv(
     const amount = Number(value);
     if (!Number.isInteger(amount) || amount <= 0) {
       problems.push(`${key} 必须是正整数：${String(raw[key])}`);
+    }
+  }
+
+  // R31：时段的墙钟时间按这个时区解释。拼错（如 `Asia/Shanghai ` 带空格、
+  // `GMT+8` 这种非 IANA 名）不会在配置层报错，只会在每次预约比对时抛
+  // RangeError——让进程起不来，比让每个预约请求 500 好。
+  const timezone = raw.APP_TIMEZONE;
+  if (typeof timezone === 'string' && timezone.trim() !== '') {
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: timezone });
+    } catch {
+      problems.push(`APP_TIMEZONE 不是合法的 IANA 时区名：${timezone}`);
     }
   }
 

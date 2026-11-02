@@ -272,9 +272,80 @@ ALTER TABLE `sys_user`
 | `sync_org_unit` | `code_active` | `(code_active)` | 源系统的单位编码 |
 | `sync_person` | `login_active` | `(login_active)` | 学号 / 工号 |
 | `mentor_profile` | `person_id_active` | `(person_id_active)` | 一人一份档案 |
+| `guidance_record` | `appointment_id_active` | `(appointment_id_active)` | 一跳一行：一条预约一条指导记录 |
+| `appointment_material` | `appointment_file_active` | `(appointment_file_active)` | 同一预约同一文件只挂一次 |
+| `guidance_material` | `record_file_active` | `(record_file_active)` | 同一记录同一文件只挂一次 |
+| `student_review` | `appointment_id_active` | `(appointment_id_active)` | 一条预约一条评价（P3） |
+| `assessment` | `mentor_period_active` | `(mentor_period_active)` | 同一导师同一考核周期一条（P3） |
+| `archive_item` | `target_active` | `(target_active)` | 同一 `(target_type, target_id)` 未删行只一条（P4；软删后可再归档） |
 
-其余业务表没有自然键（`appointment` / `guidance_record` 等的唯一性靠「一跳一行」
-的业务规则，不靠 DB 约束），不加。
+其余业务表没有自然键（`appointment` 等的唯一性靠「一跳一行」的业务规则，不靠 DB
+约束），不加生成列。
+
+> **Task 20c（`20261030180000_add_professional_title`，R28）**：`mentor_profile`
+> 加 `professional_title VARCHAR(100) NULL`——职称 / 资质，自由文本（不是字典），
+> **内校 / 外校都填**（与 `affiliate_org` / `social_roles` 的 R49 内校置 NULL 不同）。
+> 纯增量：只有一条 `ADD COLUMN`，不回填、不动既有行，也不进唯一键。
+
+### P2 预约域（`20261030120000_add_appointment_domain`）
+
+五张表在 `20261027120000` 建出骨架，Task 20 补齐业务列。**全部登记进
+`SOFT_DELETE_MODELS`**；`appointment_material` / `guidance_material` 虽然像连接表，
+但「摘材料不删文件」——软删保留行、`SysFile` 照旧，这是 DB-10 的显式例外。
+
+| 模型 | 表 | 关键列 | 索引 / 约束 |
+| --- | --- | --- | --- |
+| `MentorTimeSlot` | `mentor_time_slot` | `mentorProfileId`→`mentor_id` / `weekday`(1-7) / `startTime` / `endTime`('HH:mm') / `status`(0 关闭 / 1 开放) | `(mentor_id, weekday)` |
+| `Appointment` | `appointment` | `studentPersonId`→`student_id` / `mentorProfileId`→`mentor_id` / `type`(1-5) / `status` / `requestedTime` / `proposedTime?` / `topic` / `questions` / `mode`(1 线上 / 2 线下) / `handleComment?`→`handle_comment` / `rejectReason?` / `disputeReason?`→`dispute_reason` / `adjudicateComment?`→`adjudicate_comment` / `slotId?` | `(mentor_id, status)` / `(student_id, status)` / `(status)` / `(slot_id)` |
+| `AppointmentMaterial` | `appointment_material` | `appointmentId` / `fileId` / `kind`(1 项目计划书 / 2 竞赛备赛资料 / 3 其他) | `(appointment_id)` |
+| `GuidanceRecord` | `guidance_record` | `appointmentId` / `actualTime`→`actual_time` / `mode`(1 线上 / 2 线下) / `coreContent`→`core_content` / `followUp`→`follow_up` / `durationMinutes`→`duration_minutes`(P3，0 = 未填) / `submittedBy` / `submittedAt` | 唯一性靠生成列唯一键 `uk_guidance_record_appointment_active`（见下） |
+| `GuidanceMaterial` | `guidance_material` | `recordId`→`guidance_record_id` / `fileId` | `(guidance_record_id)` |
+| `StudentReview` | `student_review` | `appointmentId` / `attitude` / `expertise` / `effect`(各 1-5) / `overallScore`→`overall_score`(DECIMAL(3,2)) / `comment?` | 唯一性靠生成列唯一键 `uk_student_review_appointment_active`（P3） |
+| `Achievement` | `achievement` | `mentorId` / `type`(1 竞赛获奖 / 2 项目立项 / 3 其他) / `title` / `level`(1 国家级 … 5 院级) / `awardedAt`→`awarded_at`(DATE) / `description?` / `proofFileId?`（裸列无外键） | `(mentor_id)` / `(awarded_at)` |
+
+> **列名说明**：实体侧按 P2 契约叫 `mentorProfileId` / `studentPersonId` / `recordId`，
+> DB 列名沿用 Task 5 占位期的 `mentor_id` / `student_id` / `guidance_record_id`。
+> `@map` 只做名字映射、不改既有列——改名会让迁移出现 `DROP`，且与「不改既有列名」
+> 的红线冲突。**唯一例外**是 Task 20b 的 `content` → `core_content`：那里用手写
+> `RENAME COLUMN`（不是 diff 生成的 `DROP` + `ADD`），零破坏。
+>
+> **DB-11**：`guidance_record` 是软删表，唯一约束不能建在业务列上。Task 26 的「同一预约
+> 只能一条记录」由 `20261030140000_add_guidance_record_active_unique` 里的生成列
+> `appointment_id_active` + 唯一键 `uk_guidance_record_appointment_active` 保证——
+> 与 `mentor_profile.person_id_active` 同法。`schema.prisma` 里因此**没有** `@unique`。
+>
+> **Task 20b（`20261030160000_amend_appointment_domain`）**：原始需求 §2.2 / §3.4
+> 到位后补列（R25 / R26）。`Appointment` 加 `questions` / `mode` / `handle_comment`；
+> `GuidanceRecord` 加 `actual_time` / `mode` / `follow_up`，并把原 `content`
+> **`RENAME COLUMN`** 成 `core_content`——它是「核心指导内容」的同一列，**不是**新增同义列，
+> 表上不存在 `content` 与 `core_content` 并存。该迁移纯增量：零 `DROP TABLE` /
+> `DROP COLUMN` / `DELETE` / `TRUNCATE`，只有 `ADD COLUMN` / `RENAME COLUMN`。
+>
+> **Task 27（`20261030200000_add_appointment_dispute_reason`）**：需求 §2.4「有异议
+> 填写反馈申请复核」需要一个落点，`Appointment` 加 `dispute_reason VARCHAR(500) NULL`
+> （`disputeReason`）。**不复用** `reject_reason`（导师拒绝预约）或 `handle_comment`
+> （导师处理意见）——三者语义不同。该迁移同样纯增量，只有一条 `ADD COLUMN`。
+>
+> **Task 28（`20261030220000_add_appointment_adjudicate_comment`）**：需求 §4.3
+> 「学生预约复核申请……不通过需填写审核意见」需要一个落点，`Appointment` 加
+> `adjudicate_comment VARCHAR(500) NULL`（`adjudicateComment`）。**不复用**
+> `handle_comment` / `reject_reason` / `dispute_reason`——四者语义各不相同。
+> 该迁移同样纯增量，只有一条 `ADD COLUMN`。
+>
+> **Task 29（`20261030230000_add_appointment_material_kind`）**：需求 §2.3 的辅助
+> 材料例子（项目计划书 / 竞赛备赛资料）需要分类落点，`AppointmentMaterial` 加
+> `kind TINYINT NOT NULL`（1 项目计划书 / 2 竞赛备赛资料 / 3 其他）。表在 Task 20
+> 建好后为空，故 NOT NULL 无需默认值。`GuidanceMaterial` **不加**：需求 §3.5 的
+> 过程材料只有例子、没有分类语义，两表不对称是有意为之。该迁移同样纯增量，
+> 只有一条 `ADD COLUMN`。
+>
+> **Task 29 返工轮 1（`20261031000000_add_material_active_unique`）**：重复挂接原
+> 先只有服务层「先查后插」，并发双发可落两行。按 DB-11 补生成列唯一键
+> `uk_appointment_material_file_active` / `uk_guidance_material_file_active`——
+> 生成列在 `deleted_at` 非空时取 NULL，摘掉后同一 fileId 可再挂。纯增量，只有
+> `ADD COLUMN` + `ADD UNIQUE KEY`。`GuidanceMaterial.recordId` 的物理列名是
+> `guidance_record_id`（Task 5 占位期列名），生成列按它拼接。
+
 
 本包的 `prisma/migrations/` 里就是这两段 DDL，**原样搬进应用的迁移**即可，
 不要重新推导——推导出来的版本很容易漏掉某个生成列，而漏了要到「软删后重建」

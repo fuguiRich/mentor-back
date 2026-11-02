@@ -263,6 +263,19 @@ export class ReviewService {
         reviewField: 'scReview',
         record: record as unknown as Prisma.InputJsonValue,
         ...(landing === undefined ? {} : { landing }),
+        // P4 Task 52 / R66：终审通过 → 同事务归档
+        ...(edge.to === MENTOR_APPLICATION_STATUS.APPROVED
+          ? {
+              archive: {
+                targetType: 'MentorApplication',
+                targetId: application.id.toString(),
+                title: `导师入驻申请 #${application.id.toString()}`,
+                mentorId: application.profileId,
+                deptId: application.applicant?.orgUnit?.deptId ?? null,
+                category: 'mentor-application',
+              },
+            }
+          : {}),
       });
       if (landing === undefined) {
         // type=2 的 6 APPROVED 两笔留痕已在事务里落（行 1 + 行 2），再走
@@ -432,6 +445,7 @@ export class ReviewService {
     reviewField?: 'collegeReview' | 'scReview';
     record?: Prisma.InputJsonValue;
     landing?: TransitionInput['landing'];
+    archive?: TransitionInput['archive'];
   }): Promise<MentorApplication> {
     const row = await this.repository.applyTransition({
       applicationId: input.application.id,
@@ -444,6 +458,7 @@ export class ReviewService {
       profileId: input.application.profileId,
       profileStatus: this.profileStatusEffect(input.application, input.to),
       ...(input.landing === undefined ? {} : { landing: input.landing }),
+      ...(input.archive === undefined ? {} : { archive: input.archive }),
     });
     if (row === null) {
       throw this.transitionInvalid();
@@ -456,7 +471,7 @@ export class ReviewService {
    * 且落到 `6 APPROVED` 那一支返回；其余分支返回 undefined（不带 landing）。
    *
    * 一次事务三件事（红线 16，实际做法）：申请状态 `4 → 6`（applyTransition
-   * 本体）+ 档案 6 个可填报字段写回（`writeProfile`，收 `tx`）+ 两笔 OpLog
+   * 本体）+ 档案 7 个可填报字段写回（`writeProfile`，收 `tx`）+ 两笔 OpLog
    * （`recordLogs`，**经同一个 `tx` 落**，R76）——业务回滚则三样一起没；
    * 传 `tx` 的 `OpLogService.record` 错误外抛（R77），留痕失败整件回滚。
    *
@@ -467,7 +482,7 @@ export class ReviewService {
    * - 键名翻译在 `MentorRepository.updateDraft`（R68）——本方法一行都不点名
    *   `researchAchievements`；
    * - 留痕两行（§4）：行 1 `targetType='application'`（Task 14 §4 的形状）+
-   *   行 2 `targetType='mentorProfile'`（6 字段旧值 / 新值完整快照，不是差集）。
+   *   行 2 `targetType='mentorProfile'`（7 字段旧值 / 新值完整快照，不是差集）。
    *   行 1 在这里落、不再走 `recordSuccess`（否则翻倍）。
    */
   private buildApprovedLanding(
@@ -491,6 +506,7 @@ export class ReviewService {
       guidanceExperience: snapshot.guidanceExperience,
       affiliateOrg: snapshot.affiliateOrg,
       socialRoles: snapshot.socialRoles,
+      professionalTitle: snapshot.professionalTitle,
     };
     // 行 2 的「旧值」：写回前在事务里读一次档案行（导师在审期间档案冻结，
     // 但读旧值仍放事务内——留痕的时点由事务钉住）
@@ -698,7 +714,7 @@ function stateSnapshot(row: MentorApplication): {
 }
 
 /**
- * 行 2 留痕的快照形状（brief §4）：6 个可填报字段的完整取值（不是差集）。
+ * 行 2 留痕的快照形状（brief §4）：7 个可填报字段的完整取值（不是差集）。
  * 键名是响应 DTO 的（`achievements`）——R68 的键名翻译只在持久层出现，
  * 留痕里不点名 `researchAchievements`。
  */
@@ -714,6 +730,7 @@ function profileFieldSnapshot(
     guidanceExperience: source.guidanceExperience,
     affiliateOrg: source.affiliateOrg,
     socialRoles: source.socialRoles,
+    professionalTitle: source.professionalTitle,
   };
 }
 

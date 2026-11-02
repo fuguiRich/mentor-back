@@ -29,8 +29,8 @@ import {
 } from './e2e-helpers';
 
 /**
- * 信息修改申请 (e2e) —— brief §5 的 20 条判据（判据 20 = docs:gen 47 路径 /
- * 64 操作，Task 18 的后台改档再加 1 路径 / 1 操作；总数在这里钉一份，另由门槛命令核）。
+ * 信息修改申请 (e2e) —— brief §5 的 20 条判据（判据 20 = docs:gen 56 路径 /
+ * 75 操作；总数在这里钉一份，另由门槛命令核）。
  *
  * 用例执行顺序就是编号顺序（共享库态、maxWorkers:1 串行）：
  * 判据 1/2 各自走完整审批链（1 验写回、2 验 status 全程），判据 3/4/5 在
@@ -68,7 +68,7 @@ const HTTP_METHODS = new Set([
   'trace',
 ]);
 
-/** 快照 / 留痕里 6 个可填报字段的形状（DTO 键名，R68） */
+/** 快照 / 留痕里 7 个可填报字段的形状（DTO 键名，R68） */
 interface DraftFields {
   researchFields: string[];
   summary: string | null;
@@ -76,6 +76,7 @@ interface DraftFields {
   guidanceExperience: string | null;
   affiliateOrg: string | null;
   socialRoles: string | null;
+  professionalTitle: string | null;
 }
 
 describe('信息修改申请 (e2e)', () => {
@@ -332,7 +333,7 @@ describe('信息修改申请 (e2e)', () => {
     return row;
   }
 
-  /** 6 个可填报字段（DTO 键名，R68 翻译后） */
+  /** 7 个可填报字段（DTO 键名，R68 翻译后） */
   function draftFields(row: MentorProfile): DraftFields {
     return {
       // JSON 列在 Prisma 侧是 JsonValue；档案的形状是 string[]（DTO 同款）
@@ -342,6 +343,7 @@ describe('信息修改申请 (e2e)', () => {
       guidanceExperience: row.guidanceExperience,
       affiliateOrg: row.affiliateOrg,
       socialRoles: row.socialRoles,
+      professionalTitle: row.professionalTitle,
     };
   }
 
@@ -355,6 +357,7 @@ describe('信息修改申请 (e2e)', () => {
       guidanceExperience: '指导经验一版',
       affiliateOrg: '合作单位一版',
       socialRoles: '社会任职一版',
+      professionalTitle: '职称一版',
       ...overrides,
     };
   }
@@ -389,13 +392,15 @@ describe('信息修改申请 (e2e)', () => {
       .expect(200);
   }
 
-  it('判据 1：全链路——status=2 提 type=2 → 两级审通过 → 6 个字段逐字段等于 snapshot', async () => {
+  it('判据 1：全链路——status=2 提 type=2 → 两级审通过 → 7 个字段逐字段等于 snapshot', async () => {
     const before = (await readProfile('chg-a')) as MentorProfile;
     chgAProfileId = before.id;
     const proposal = {
       researchFields: ['智能制造'],
       summary: '改后简介',
       achievements: null,
+      // R28：职称 / 资质随提案改，生效后写回档案
+      professionalTitle: '教授',
     };
     chgASnapshot = {
       mentorType: 'internal',
@@ -407,6 +412,8 @@ describe('信息修改申请 (e2e)', () => {
       // R49：内校恒 null
       affiliateOrg: null,
       socialRoles: null,
+      // R28：内校也填——提案给了就改
+      professionalTitle: '教授',
     };
 
     // 三步 201/200/200
@@ -439,6 +446,7 @@ describe('信息修改申请 (e2e)', () => {
       guidanceExperience: chgASnapshot.guidanceExperience,
       affiliateOrg: chgASnapshot.affiliateOrg,
       socialRoles: chgASnapshot.socialRoles,
+      professionalTitle: chgASnapshot.professionalTitle,
     });
   });
 
@@ -459,7 +467,7 @@ describe('信息修改申请 (e2e)', () => {
     await review('chg-sc-admin', app2.id, 'sc-review', 'approve', '双创通过');
     const final = (await readProfile('chg-a2')) as MentorProfile;
     expect(final.status).toBe(2);
-    // 生效只写 6 个可填报字段（§0.5）：写回发生了，status 没动
+    // 生效只写 7 个可填报字段（§0.5）：写回发生了，status 没动
     expect(final.summary).toBe('全程跟踪简介');
   });
 
@@ -630,7 +638,7 @@ describe('信息修改申请 (e2e)', () => {
     expect(all[1].id).toBe(chgDApp2.id);
   });
 
-  it('判据 13：提案被拒（college reject → 3）——MentorProfile 6 字段逐字不变、status 仍 2', async () => {
+  it('判据 13：提案被拒（college reject → 3）——MentorProfile 7 字段逐字不变、status 仍 2', async () => {
     const before = (await readProfile('chg-b')) as MentorProfile;
     expect(before.status).toBe(2);
     const fieldsBefore = draftFields(before);
@@ -669,7 +677,7 @@ describe('信息修改申请 (e2e)', () => {
     expect(after.status).toBe(2);
   });
 
-  it('判据 15：留痕——6 APPROVED 后 SysOpLog 两行：application + mentorProfile，before/after 完整 6 字段', async () => {
+  it('判据 15：留痕——6 APPROVED 后 SysOpLog 两行：application + mentorProfile，before/after 完整 7 字段', async () => {
     const rows = await prisma.client.sysOpLog.findMany({
       where: {
         module: 'mentor-application',
@@ -699,7 +707,7 @@ describe('信息修改申请 (e2e)', () => {
     expect(after1.status).toBe(6);
     expect(after1.scReview?.decision).toBe('approve');
 
-    // 行 2：targetType='mentorProfile'，6 个可填报字段的旧值 / 新值完整快照
+    // 行 2：targetType='mentorProfile'，7 个可填报字段的旧值 / 新值完整快照
     expect(row2.targetType).toBe('mentorProfile');
     expect(row2.targetId).toBe(chgAProfileId.toString());
     expect(row2.before).toEqual({
@@ -709,6 +717,7 @@ describe('信息修改申请 (e2e)', () => {
       guidanceExperience: '指导经验一版',
       affiliateOrg: null,
       socialRoles: null,
+      professionalTitle: '职称一版',
     });
     expect(row2.after).toEqual({
       researchFields: chgASnapshot.researchFields,
@@ -717,6 +726,7 @@ describe('信息修改申请 (e2e)', () => {
       guidanceExperience: chgASnapshot.guidanceExperience,
       affiliateOrg: chgASnapshot.affiliateOrg,
       socialRoles: chgASnapshot.socialRoles,
+      professionalTitle: chgASnapshot.professionalTitle,
     });
   });
 
@@ -782,7 +792,7 @@ describe('信息修改申请 (e2e)', () => {
     const s3 = JSON.stringify((await readApp(chgDApp2.id)).snapshot);
     expect(s3).toBe(s1);
 
-    // 写回数据源三方比对（P2-1）：生效后 6 字段 = snapshot 的值（数据源是快照，
+    // 写回数据源三方比对（P2-1）：生效后 7 字段 = snapshot 的值（数据源是快照，
     // 不是重读当前行），且 ≠ 生效前的 profileBefore 旧值（写回确实落了新值）
     const merged = (await readApp(chgDApp2.id))
       .snapshot as unknown as DraftFields & { mentorType: string };
@@ -794,6 +804,7 @@ describe('信息修改申请 (e2e)', () => {
       guidanceExperience: merged.guidanceExperience,
       affiliateOrg: merged.affiliateOrg,
       socialRoles: merged.socialRoles,
+      professionalTitle: merged.professionalTitle,
     });
     expect(after).not.toEqual(profileBefore);
   });
@@ -834,7 +845,7 @@ describe('信息修改申请 (e2e)', () => {
     }
   });
 
-  it('判据 20：docs:gen 47 路径 / 64 操作（不多不少）；profile-change 恰好 post 一条', () => {
+  it('判据 20：docs:gen 85 路径 / 112 操作（不多不少）；profile-change 恰好 post 一条', () => {
     const document = buildDocument(app);
     const methodsOf = (path: string): string[] => {
       const item = document.paths[path] as Record<string, unknown> | undefined;
@@ -849,13 +860,63 @@ describe('信息修改申请 (e2e)', () => {
 
     const paths = Object.keys(document.paths);
     // Task 16+17 的佐证材料面加了 4 路径 / 5 操作：42/58 → 46/63；
-    // Task 18 的后台改档 PUT /mentor/profiles/{id} 再加 1 路径 / 1 操作：46/63 → 47/64
-    expect(paths).toHaveLength(47);
+    // Task 18 的后台改档 PUT /mentor/profiles/{id} 再加 1 路径 / 1 操作：46/63 → 47/64；
+    // Task 21 的时段管理（/mentor/slots 与 /mentor/slots/{id}，各 get+post / put+delete）
+    // 再加 2 路径 / 4 操作：47/64 → 49/68；
+    // Task 22 的导师检索（/mentors 与 /mentors/{id}，各 get）再加 2 路径 / 2 操作：49/68 → 51/70；
+    // Task 23 的发起预约 POST /appointments 再加 1 路径 / 1 操作：51/70 → 52/71；
+    // Task 24 的预约处理（confirm / reject / reschedule）再加 3 路径 / 3 操作：52/71 → 55/74；
+    // Task 25 的学生取消 POST /appointments/{id}/cancel 再加 1 路径 / 1 操作：55/74 → 56/75；
+    // Task 26 的指导记录 POST + GET /appointments/{id}/record 再加 1 路径 / 2 操作：56/75 → 57/77；
+    // Task 27 的学生确认记录 / 提异议（confirm-record、dispute，各 1 个 POST）
+    // 再加 2 路径 / 2 操作：57/77 → 59/79；
+    // Task 28 的异议复核 POST /appointments/{id}/adjudicate 再加 1 路径 / 1 操作：
+    // 59/79 → 60/80；
+    // Task 29 的预约材料 / 过程材料再加 4 路径 / 5 操作：60/80 → 64/85；
+    // Task 30 的预约列表 GET /appointments（与既有 POST 同路径）+ 详情
+    // GET /appointments/{id} 再加 1 路径 / 2 操作：64/85 → 65/87；
+    // P3 Task 34 的评价再加 2 路径 / 3 操作（`/appointments/{id}/review` 的 post+get、
+    // `/mentors/{mentorId}/reviews` 的 get）：65/87 → 67/90；
+    // P3 Task 36 的成果再加 2 路径 / 4 操作（`/mentors/{mentorId}/achievements` 的
+    // post+get、`/mentors/{mentorId}/achievements/{achievementId}` 的 patch+delete）：67/90 → 69/94
+    // P4 的统计 / 导出 / 归档：85/112 → 88/118
+    // （`/stats/*` 5 条、4 条 `/export`、`/me/records/export`，以及归档的
+    // `/archives`、`/archives/purge`、`/archives/{id}`）
+    // P5 的学期规则 / 消息 / 学生成果：88/118 → 97/129
+    expect(paths).toHaveLength(97);
     let operations = 0;
     for (const path of paths) {
       operations += methodsOf(path).length;
     }
-    expect(operations).toBe(64);
+    expect(operations).toBe(129);
+  });
+
+  it('判据 21（R28）：旧快照缺 professionalTitle 键 → GET 详情不报错，归一为 null', async () => {
+    // 造一条正常的提案，再把快照里的 professionalTitle 键删掉——模拟 Task 20c
+    // 之前落库的历史快照（那时 MentorProfileDraft 还没有这个字段）
+    const created = await submitChange('chg-g', { summary: '旧快照兼容' });
+    const stored = (await readApp(created.id)).snapshot as Record<
+      string,
+      unknown
+    >;
+    expect(stored.professionalTitle).toBe('职称一版');
+    const legacy: Record<string, unknown> = { ...stored };
+    delete legacy.professionalTitle;
+    await prisma.client.mentorApplication.update({
+      where: { id: created.id },
+      data: { snapshot: legacy },
+    });
+
+    const response = await api('chg-sc-admin')
+      .get(`/mentor-applications/${created.id.toString()}`)
+      .expect(200);
+    const data = (
+      response.body as ResponseEnvelope<MentorApplicationResponseDto>
+    ).data;
+    // 缺键不抛错：归一为 null，其余字段照常
+    expect(data.snapshot.professionalTitle).toBeNull();
+    expect(data.snapshot.summary).toBe(stored.summary);
+    expect(data.snapshot.researchFields).toEqual(stored.researchFields);
   });
 });
 

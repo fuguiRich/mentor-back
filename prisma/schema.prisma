@@ -400,6 +400,8 @@ model SyncPerson {
   applications MentorApplication[]
   /// 以学生身份发起的预约（P2）
   appointments Appointment[]
+  /// 以学生身份登记的双创成果（P5）
+  studentAchievements StudentAchievement[]
 
   @@index([orgUnitId])
   @@index([personType])
@@ -472,6 +474,9 @@ model MentorProfile {
   affiliateOrg       String? @map("affiliate_org")          @db.VarChar(100)
   /// 社会任职（仅校外 mentorType='external' 时有效——内校落 NULL，R49）
   socialRoles        String? @map("social_roles")           @db.VarChar(100)
+  /// 职称 / 资质，自由文本 ≤100（R28）。**内校 / 外校都填**——与 affiliateOrg /
+  /// socialRoles 不同，内校不置 NULL。P2 检索条件（§2.1）与展示字段（§3.1）
+  professionalTitle  String? @map("professional_title")     @db.VarChar(100)
 
   createdAt  DateTime  @default(now()) @map("created_at") @db.DateTime(3)
   updatedAt  DateTime  @default(now()) @map("updated_at") @db.DateTime(3)
@@ -488,6 +493,8 @@ model MentorProfile {
   appointments Appointment[]
   assessments  Assessment[]
   achievements Achievement[]
+  /// 关联到该导师的学生成果（P5 §5.4）
+  linkedStudentAchievements StudentAchievement[]
 
   @@index([personId])
   @@index([status])
@@ -560,9 +567,19 @@ model MentorApplicationMaterial {
 // ── 以下五个模型属于 P2 / P3 / P4，本期只落表 + 关联，字段到各自分期补 ──────
 
 /// 可指导时段（P2 预约流）。周几 + 起止，开放 / 关闭。
+///
+/// 列名沿用 Task 5 占位时定下的 `mentor_id`（未改既有列名），实体侧按 P2 契约叫
+/// `mentorProfileId`——`@map` 只做名字映射，不动列。
 model MentorTimeSlot {
-  id        BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
-  mentorId  BigInt   @map("mentor_id") @db.UnsignedBigInt
+  id              BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  mentorProfileId BigInt @map("mentor_id") @db.UnsignedBigInt
+  /// 1 周一 … 7 周日（越界由 DTO 拦，见 Task 21）
+  weekday         Int    @db.TinyInt
+  /// 起止时间，'HH:mm'（如 '09:00'）
+  startTime       String @map("start_time") @db.VarChar(5)
+  endTime         String @map("end_time") @db.VarChar(5)
+  /// 0 关闭 | 1 开放
+  status          Int    @default(1) @db.TinyInt
 
   createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
   updatedAt DateTime @default(now()) @map("updated_at") @db.DateTime(3)
@@ -572,18 +589,50 @@ model MentorTimeSlot {
   deletedAt DateTime? @map("deleted_at") @db.DateTime(3)
   deletedBy BigInt?   @map("deleted_by") @db.UnsignedBigInt
 
-  mentor    MentorProfile @relation(fields: [mentorId], references: [id])
+  mentor       MentorProfile @relation(fields: [mentorProfileId], references: [id])
+  appointments Appointment[]
 
-  @@index([mentorId])
+  /// 占位期的单列索引保留（删它会在迁移里产生 DROP INDEX），复合索引是 Task 20 新加的
+  @@index([mentorProfileId], map: "mentor_time_slot_mentor_id_idx")
+  @@index([mentorProfileId, weekday])
   @@map("mentor_time_slot")
 }
 
-/// 预约（P2）。5 类预约，状态机见需求 §3.2——**状态还没定，本期不落列**。
+/// 预约（P2）。5 类预约，状态机见需求 §3.2。
+///
+/// 列名沿用占位期的 `student_id` / `mentor_id`（未改既有列名），实体侧按 P2 契约
+/// 叫 `studentPersonId` / `mentorProfileId`。
 model Appointment {
-  id        BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
-  mentorId  BigInt   @map("mentor_id") @db.UnsignedBigInt
-  student   SyncPerson @relation(fields: [studentId], references: [id])
-  studentId BigInt   @map("student_id") @db.UnsignedBigInt
+  id              BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  studentPersonId BigInt    @map("student_id") @db.UnsignedBigInt
+  mentorProfileId BigInt    @map("mentor_id") @db.UnsignedBigInt
+  /// 1-5（R11）
+  type            Int       @db.TinyInt
+  /// 0 PENDING | 1 CONFIRMED | 2 IN_PROGRESS | 3 RECORD_SUBMITTED | 4 STUDENT_CONFIRMED
+  /// | 5 DISPUTED | 6 COMPLETED | 7 REJECTED | 8 CANCELLED | 9 EXPIRED
+  /// （R12；`2 IN_PROGRESS` 仅语义态，不设独立接口——提交记录时 1 → 3，见 R19）
+  status          Int       @default(0) @db.TinyInt
+  requestedTime   DateTime  @map("requested_time") @db.DateTime(3)
+  /// 导师改期建议（R13）；仍在 PENDING 时填
+  proposedTime    DateTime? @map("proposed_time") @db.DateTime(3)
+  topic           String    @db.VarChar(200)
+  /// 拟咨询问题，1-2000 字（§2.2 / R25，DTO 约束，列选 Text）
+  questions       String    @db.Text
+  /// 对接方式：1 线上 / 2 线下（§2.2 / R25）
+  mode            Int       @db.TinyInt
+  /// 处理意见（§3.3「操作时填写相关意见」）：确认 / 调整时间时填写，存最近一次
+  handleComment   String?   @map("handle_comment") @db.VarChar(500)
+  /// 拒绝原因（reject 必填 1-500 字，见 Task 24）
+  rejectReason    String?   @map("reject_reason") @db.VarChar(500)
+  /// 学生异议原因（dispute 必填 1-500 字，见 Task 27）；未提异议时为 null。
+  /// 与 `rejectReason`（导师拒绝预约）语义不同，不复用。
+  disputeReason   String?   @map("dispute_reason") @db.VarChar(500)
+  /// 管理员异议复核意见（adjudicate 必填 1-500 字，见 Task 28）。
+  /// 与 `handleComment`（导师处理意见）/ `rejectReason`（导师拒绝预约）/
+  /// `disputeReason`（学生异议原因）语义都不同，不复用。
+  adjudicateComment String? @map("adjudicate_comment") @db.VarChar(500)
+  /// 关联的可指导时段；预约可以不带时段（null）
+  slotId          BigInt?   @map("slot_id") @db.UnsignedBigInt
 
   createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
   updatedAt DateTime @default(now()) @map("updated_at") @db.DateTime(3)
@@ -593,14 +642,22 @@ model Appointment {
   deletedAt DateTime? @map("deleted_at") @db.DateTime(3)
   deletedBy BigInt?   @map("deleted_by") @db.UnsignedBigInt
 
-  mentor    MentorProfile @relation(fields: [mentorId], references: [id])
+  student SyncPerson    @relation(fields: [studentPersonId], references: [id])
+  mentor  MentorProfile @relation(fields: [mentorProfileId], references: [id])
+  slot    MentorTimeSlot? @relation(fields: [slotId], references: [id])
 
   materials        AppointmentMaterial[]
   guidanceRecords  GuidanceRecord[]
   reviews          StudentReview[]
 
-  @@index([mentorId])
-  @@index([studentId])
+  /// 占位期的单列索引保留（删它会在迁移里产生 DROP INDEX）
+  @@index([mentorProfileId], map: "appointment_mentor_id_idx")
+  @@index([studentPersonId], map: "appointment_student_id_idx")
+  /// Task 20 新增：列表按「导师 / 学生 + 状态」过滤，以及全局按状态扫超时
+  @@index([mentorProfileId, status])
+  @@index([studentPersonId, status])
+  @@index([status])
+  @@index([slotId])
   @@map("appointment")
 }
 
@@ -609,6 +666,8 @@ model AppointmentMaterial {
   id            BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
   appointmentId BigInt   @map("appointment_id") @db.UnsignedBigInt
   fileId        BigInt   @map("file_id") @db.UnsignedBigInt
+  /// 1 项目计划书 | 2 竞赛备赛资料 | 3 其他（需求 §2.3 的辅助材料例子）
+  kind          Int      @db.TinyInt
 
   createdAt     DateTime @default(now()) @map("created_at") @db.DateTime(3)
   updatedAt     DateTime @default(now()) @map("updated_at") @db.DateTime(3)
@@ -624,31 +683,56 @@ model AppointmentMaterial {
   @@map("appointment_material")
 }
 
-/// 指导记录（P2）。学生确认 / 异议。
+/// 指导记录（P2）。一条预约只能有一条记录——唯一性由生成列唯一键兜（见下方字段注释）。
+///
+/// 列名沿用占位期建表时的既有列（`appointment_id` 等），未改名（R23）。
 model GuidanceRecord {
   id            BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  /// 一条预约只能一条记录：唯一性由 DB 的生成列唯一键
+  /// `uk_guidance_record_appointment_active` 保证（DB-11；Prisma 不建模生成列，
+  /// 见 `sys_user.username_active`）
   appointmentId BigInt   @map("appointment_id") @db.UnsignedBigInt
+  /// 实际指导时间（§3.4 / R26）
+  actualTime    DateTime @map("actual_time") @db.DateTime(3)
+  /// 指导方式：1 线上 / 2 线下（§3.4 / R26）
+  mode          Int      @db.TinyInt
+  /// 核心指导内容，1-5000 字（§3.4 / R26，DTO 约束，列选 Text）
+  /// Task 20b 由原 `content` 改名而来（RENAME COLUMN，零 DROP）
+  coreContent   String   @map("core_content") @db.Text
+  /// 后续指导建议（§3.4 / R26）
+  followUp      String   @map("follow_up") @db.Text
+  /// 提交人 = 该预约的导师（SyncPerson.id）
+  submittedBy   BigInt   @map("submitted_by") @db.UnsignedBigInt
+  submittedAt   DateTime @map("submitted_at") @db.DateTime(3)
+  /// 指导时长（分钟），P3 Task 35 / R58。§5.2 的「指导工作量（次数、**时长**、学生数）」
+  /// 要有这一列才算得出来；P2 只存了 `actualTime`（时刻），没有时长。
+  /// `0` 表示导师未填（P2 提交的记录都是 0）——不是「零分钟」的断言。
+  durationMinutes Int @default(0) @map("duration_minutes") @db.UnsignedInt
 
-  createdAt     DateTime @default(now()) @map("created_at") @db.DateTime(3)
-  updatedAt     DateTime @default(now()) @map("updated_at") @db.DateTime(3)
-  createdBy     BigInt   @map("created_by") @db.UnsignedBigInt
-  updatedBy     BigInt   @map("updated_by") @db.UnsignedBigInt
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt DateTime @default(now()) @map("updated_at") @db.DateTime(3)
+  createdBy BigInt   @map("created_by") @db.UnsignedBigInt
+  updatedBy BigInt   @map("updated_by") @db.UnsignedBigInt
 
-  deletedAt     DateTime? @map("deleted_at") @db.DateTime(3)
-  deletedBy     BigInt?   @map("deleted_by") @db.UnsignedBigInt
+  deletedAt DateTime? @map("deleted_at") @db.DateTime(3)
+  deletedBy BigInt?   @map("deleted_by") @db.UnsignedBigInt
 
   appointment   Appointment @relation(fields: [appointmentId], references: [id])
 
   materials     GuidanceMaterial[]
 
-  @@index([appointmentId])
+  /// 占位期的单列索引保留；唯一性由生成列唯一键 `uk_guidance_record_appointment_active`
+  /// 保证（DB-11），不在这里用 `@unique`
+  @@index([appointmentId], map: "guidance_record_appointment_id_idx")
   @@map("guidance_record")
 }
 
 /// 过程材料（P2）。课件、笔记、修改意见。
+///
+/// 列名沿用占位期的 `guidance_record_id`（未改既有列名），实体侧叫 `recordId`。
 model GuidanceMaterial {
   id              BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
-  guidanceRecordId BigInt  @map("guidance_record_id") @db.UnsignedBigInt
+  recordId        BigInt   @map("guidance_record_id") @db.UnsignedBigInt
   fileId          BigInt   @map("file_id") @db.UnsignedBigInt
 
   createdAt       DateTime @default(now()) @map("created_at") @db.DateTime(3)
@@ -659,16 +743,34 @@ model GuidanceMaterial {
   deletedAt       DateTime? @map("deleted_at") @db.DateTime(3)
   deletedBy       BigInt?   @map("deleted_by") @db.UnsignedBigInt
 
-  guidanceRecord  GuidanceRecord @relation(fields: [guidanceRecordId], references: [id])
+  guidanceRecord  GuidanceRecord @relation(fields: [recordId], references: [id])
 
-  @@index([guidanceRecordId])
+  @@index([recordId], map: "guidance_material_guidance_record_id_idx")
   @@map("guidance_material")
 }
 
 /// 学生评价（P3）。三维度评分。
+///
+/// 一条预约一条评价：唯一性由生成列 `appointment_id_active` + 唯一键
+/// `uk_student_review_appointment_active` 保证（DB-11，见 `schema-contract.md`），
+/// 所以这里**没有** `@unique`。
+///
+/// `overallScore` 是**写入时算好**的冗余列（R41），不是数据库生成列：
+/// Prisma 的 `aggregate` 要能直接对均值求平均，表达式列它表达不了。
 model StudentReview {
   id            BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
   appointmentId BigInt   @map("appointment_id") @db.UnsignedBigInt
+
+  /// 指导态度 1-5
+  attitude  Int @db.TinyInt
+  /// 专业能力 1-5
+  expertise Int @db.TinyInt
+  /// 指导效果 1-5
+  effect    Int @db.TinyInt
+  /// `round((attitude + expertise + effect) / 3, 2)`，由写入方算（R41）
+  overallScore Decimal @map("overall_score") @db.Decimal(3, 2)
+  /// 文字评价，可空（R42）
+  comment      String? @db.VarChar(1000)
 
   createdAt     DateTime @default(now()) @map("created_at") @db.DateTime(3)
   updatedAt     DateTime @default(now()) @map("updated_at") @db.DateTime(3)
@@ -685,9 +787,46 @@ model StudentReview {
 }
 
 /// 考核（P3）。初评 + 终评两跳。
+///
+/// 状态机见 `docs/plans/2026-10-30-mentor-p3.md`：
+/// `0 DRAFT → 1 COLLEGE_SUBMITTED → 2 APPROVED | 3 RETURNED`，`3 → 1` 可重评。
+/// **同一导师同一 `period` 只有一条考核**：唯一性由生成列 `mentor_period_active`
+/// + 唯一键 `uk_assessment_mentor_period_active` 保证（DB-11），所以这里没有 `@@unique`。
+///
+/// 6 个指标列 + `compositeScore` + `weights` 在**提交初评时冻结**（R55）：
+/// 不冻结的话，初评之后学生再写评价会让「已提交的初评」数字自己变。
 model Assessment {
   id        BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
   mentorId  BigInt   @map("mentor_id") @db.UnsignedBigInt
+
+  /// 考核周期，只接受 `^\d{4}$`（R47）；区间 `[YYYY-01-01, (YYYY+1)-01-01)`
+  period    String   @db.VarChar(20)
+  /// 0 DRAFT | 1 COLLEGE_SUBMITTED | 2 APPROVED | 3 RETURNED
+  status    Int      @default(0) @db.TinyInt
+
+  /// 提交初评时冻结的三个权重 `{ review, workload, achievement }`（R55 / R61）
+  weights          Json?    @db.Json
+  /// 学生评价均分（0-5），无评价为 null
+  reviewAvg        Decimal? @map("review_avg") @db.Decimal(3, 2)
+  reviewCount      Int?     @map("review_count") @db.UnsignedInt
+  guidanceCount    Int?     @map("guidance_count") @db.UnsignedInt
+  guidanceMinutes  Int?     @map("guidance_minutes") @db.UnsignedInt
+  studentCount     Int?     @map("student_count") @db.UnsignedInt
+  achievementCount Int?     @map("achievement_count") @db.UnsignedInt
+  /// 加权总分（百分制），2 位小数（R49）
+  compositeScore   Decimal? @map("composite_score") @db.Decimal(5, 2)
+
+  /// 初评等级：1 优秀 / 2 合格 / 3 不合格。**人工填**，不由分数推导（R50）
+  collegeGrade       Int?      @map("college_grade") @db.TinyInt
+  collegeComment     String?   @map("college_comment") @db.VarChar(1000)
+  collegeSubmittedAt DateTime? @map("college_submitted_at") @db.DateTime(3)
+  collegeSubmittedBy BigInt?   @map("college_submitted_by") @db.UnsignedBigInt
+
+  /// 终评等级：与初评**独立**，可以不同（R54）
+  finalGrade      Int?      @map("final_grade") @db.TinyInt
+  finalComment    String?   @map("final_comment") @db.VarChar(1000)
+  finalReviewedAt DateTime? @map("final_reviewed_at") @db.DateTime(3)
+  finalReviewedBy BigInt?   @map("final_reviewed_by") @db.UnsignedBigInt
 
   createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
   updatedAt DateTime @default(now()) @map("updated_at") @db.DateTime(3)
@@ -702,13 +841,28 @@ model Assessment {
   appeals   AssessmentAppeal[]
 
   @@index([mentorId])
+  @@index([status])
   @@map("assessment")
 }
 
 /// 考核申诉（P3）。
+///
+/// `0 PENDING → 1 ACCEPTED | 2 REJECTED`，**终态 1 / 2**。
+/// 同一考核同时只许一条 `PENDING` 申诉——**服务层检查**，不加 DB 约束：
+/// 「同一考核有多条历史申诉」是合理的，只是不能有两条待处理。
+/// **受理不改 `Assessment`**（R56）：受理只表示双创学院已收到并会复核。
 model AssessmentAppeal {
   id           BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
   assessmentId BigInt   @map("assessment_id") @db.UnsignedBigInt
+
+  /// 申诉说明，1-1000 字
+  reason       String   @db.VarChar(1000)
+  /// 0 PENDING | 1 ACCEPTED | 2 REJECTED
+  status       Int      @default(0) @db.TinyInt
+  /// 处理意见，1-1000 字（处理时必填）
+  reply        String?  @db.VarChar(1000)
+  handledAt    DateTime? @map("handled_at") @db.DateTime(3)
+  handledBy    BigInt?   @map("handled_by") @db.UnsignedBigInt
 
   createdAt    DateTime @default(now()) @map("created_at") @db.DateTime(3)
   updatedAt    DateTime @default(now()) @map("updated_at") @db.DateTime(3)
@@ -725,9 +879,25 @@ model AssessmentAppeal {
 }
 
 /// 双创成果（P3）。竞赛获奖 / 项目立项。
+///
+/// 导师本人登记、登记即生效（R45）；§5.4 的「成果关联归档」归 P4，本期只给
+/// §5.2 的考核初评提供输入。
 model Achievement {
   id        BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
   mentorId  BigInt   @map("mentor_id") @db.UnsignedBigInt
+
+  /// 1 竞赛获奖 / 2 项目立项 / 3 其他（§5.2 原文列举前两类）
+  type      Int      @db.TinyInt
+  /// 成果名称，≤200
+  title     String   @db.VarChar(200)
+  /// 级别：1 国家级 / 2 省级 / 3 市级 / 4 校级 / 5 院级（R46，立项同用此标尺）
+  level     Int      @db.TinyInt
+  /// 获奖 / 立项日期（只到日）
+  awardedAt DateTime @map("awarded_at") @db.Date
+  /// 说明，≤1000，可空
+  description String? @db.VarChar(1000)
+  /// 佐证文件（SysFile.id）。**裸列无外键**——文件被多处引用，删成果不该连带删文件
+  proofFileId BigInt? @map("proof_file_id") @db.UnsignedBigInt
 
   createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
   updatedAt DateTime @default(now()) @map("updated_at") @db.DateTime(3)
@@ -738,8 +908,11 @@ model Achievement {
   deletedBy BigInt?   @map("deleted_by") @db.UnsignedBigInt
 
   mentor    MentorProfile @relation(fields: [mentorId], references: [id])
+  /// 由学生成果关联生成的这条成果（P5 §5.4；一条成果只对应一条学生成果）
+  studentLink StudentAchievement?
 
   @@index([mentorId])
+  @@index([awardedAt])
   @@map("achievement")
 }
 
@@ -750,6 +923,23 @@ model ArchiveItem {
   targetType String   @map("target_type") @db.VarChar(50)
   targetId   String   @map("target_id") @db.VarChar(50)
 
+  /// 归档时的标题快照（≤200）。不联表取名：被归档的实体可能早已软删
+  title    String  @db.VarChar(200)
+  /// 归属导师（裸列无外键：归档要活过导师档案的软删）
+  mentorId BigInt? @map("mentor_id") @db.UnsignedBigInt
+  /// 归档时的部门快照（裸列无外键）。导师调岗不影响历史检索
+  deptId   BigInt? @map("dept_id") @db.UnsignedBigInt
+  /// `mentor-application` / `assessment` / `guidance-record` / `achievement` / `other`
+  category String  @db.VarChar(50)
+  /// 1 核心（永久保存）/ 0 非核心（到期清理，R64）
+  core     Int     @default(1) @db.TinyInt
+  /// 归档时间
+  archivedAt DateTime @map("archived_at") @db.DateTime(3)
+  /// 非核心材料的保留截止日（`core = 1` 时恒为 null）
+  retentionUntil DateTime? @map("retention_until") @db.Date
+  /// 归档摘要（≤500），可空
+  summary  String? @db.VarChar(500)
+
   createdAt  DateTime @default(now()) @map("created_at") @db.DateTime(3)
   updatedAt  DateTime @default(now()) @map("updated_at") @db.DateTime(3)
   createdBy  BigInt   @map("created_by") @db.UnsignedBigInt
@@ -759,5 +949,84 @@ model ArchiveItem {
   deletedBy  BigInt?   @map("deleted_by") @db.UnsignedBigInt
 
   @@index([targetType])
+  @@index([mentorId])
+  @@index([category])
+  @@index([retentionUntil])
   @@map("archive_item")
+}
+
+/// 站内消息 / 提醒（P5 Task 58 / §4.5）。
+///
+/// `recipient_user_id` 是 `SysUser.id` 的**裸列无外键**：消息要活过账号软删，
+/// 且收件人只在读路径按当前登录者过滤。`read_at` 非空 = 已读（已读回执，P5-R1）。
+model Message {
+  id              BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  recipientUserId BigInt    @map("recipient_user_id") @db.UnsignedBigInt
+  /// 1 预约待处理 / 2 指导记录待填写 / 3 考核待处理
+  type            Int       @db.TinyInt
+  title           String    @db.VarChar(100)
+  content         String    @db.VarChar(500)
+  /// 关联业务对象（弱关联，如 MentorProfile）
+  bizType         String?   @map("biz_type") @db.VarChar(50)
+  bizId           String?   @map("biz_id") @db.VarChar(50)
+  /// 已读时刻；NULL = 未读
+  readAt          DateTime? @map("read_at") @db.DateTime(3)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt DateTime @default(now()) @map("updated_at") @db.DateTime(3)
+  createdBy BigInt   @map("created_by") @db.UnsignedBigInt
+  updatedBy BigInt   @map("updated_by") @db.UnsignedBigInt
+
+  deletedAt DateTime? @map("deleted_at") @db.DateTime(3)
+  deletedBy BigInt?   @map("deleted_by") @db.UnsignedBigInt
+
+  @@index([recipientUserId, readAt])
+  @@index([type])
+  @@map("message")
+}
+
+/// 学生双创成果（P5 Task 59 / §5.4）。
+///
+/// 人工关联（P5-R3）：`mentorId` 为空 = 未关联；关联时同事务生成一条导师
+/// `Achievement`（`achievementId` 指回去），让既有考核指标 / 统计自动计入。
+/// `deptId` 是**学生所在学院快照**：检索按学生学院收窄，不受导师调岗影响。
+model StudentAchievement {
+  id              BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  studentPersonId BigInt   @map("student_person_id") @db.UnsignedBigInt
+  /// 关联的导师档案；NULL = 未关联
+  mentorId        BigInt?  @map("mentor_id") @db.UnsignedBigInt
+  /// 关联时生成的导师成果；NULL = 未关联
+  achievementId   BigInt?  @unique @map("achievement_id") @db.UnsignedBigInt
+  /// 学生所在学院快照
+  deptId          BigInt?  @map("dept_id") @db.UnsignedBigInt
+
+  /// 1 竞赛获奖 / 2 项目立项 / 3 其他
+  type      Int      @db.TinyInt
+  title     String   @db.VarChar(200)
+  /// 1 国家级 / 2 省级 / 3 市级 / 4 校级 / 5 院级
+  level     Int      @db.TinyInt
+  awardedAt DateTime @map("awarded_at") @db.Date
+  /// 佐证文件（SysFile.id），裸列无外键
+  proofFileId BigInt? @map("proof_file_id") @db.UnsignedBigInt
+
+  linkedAt DateTime? @map("linked_at") @db.DateTime(3)
+  linkedBy BigInt?   @map("linked_by") @db.UnsignedBigInt
+
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt DateTime @default(now()) @map("updated_at") @db.DateTime(3)
+  createdBy BigInt   @map("created_by") @db.UnsignedBigInt
+  updatedBy BigInt   @map("updated_by") @db.UnsignedBigInt
+
+  deletedAt DateTime? @map("deleted_at") @db.DateTime(3)
+  deletedBy BigInt?   @map("deleted_by") @db.UnsignedBigInt
+
+  student     SyncPerson     @relation(fields: [studentPersonId], references: [id])
+  mentor      MentorProfile? @relation(fields: [mentorId], references: [id])
+  achievement Achievement?   @relation(fields: [achievementId], references: [id])
+
+  @@index([studentPersonId])
+  @@index([mentorId])
+  @@index([deptId])
+  @@index([awardedAt])
+  @@map("student_achievement")
 }

@@ -23,7 +23,7 @@ function toStringArray(value: unknown): string[] {
 }
 
 /**
- * 留痕快照的形状（Task 18 §4）：6 个可填报字段的**完整取值**，不是差集。
+ * 留痕快照的形状（Task 18 §4）：7 个可填报字段的**完整取值**，不是差集。
  *
  * 键名是响应 DTO 的（`achievements`）——`researchAchievements` 这个 Prisma
  * 标量名只在本文件出现（R68 的键名翻译收口），业务代码不点名它。
@@ -35,6 +35,7 @@ export interface ProfileFieldSnapshot {
   guidanceExperience: string | null;
   affiliateOrg: string | null;
   socialRoles: string | null;
+  professionalTitle: string | null;
 }
 
 /** 实体 → 留痕快照（键名翻译在这一处，调用方只拿 DTO 键名） */
@@ -48,6 +49,7 @@ export function toProfileFieldSnapshot(
     guidanceExperience: entity.guidanceExperience,
     affiliateOrg: entity.affiliateOrg,
     socialRoles: entity.socialRoles,
+    professionalTitle: entity.professionalTitle,
   };
 }
 
@@ -69,6 +71,7 @@ export function toMentorProfileResponse(
     guidanceExperience: entity.guidanceExperience,
     affiliateOrg: entity.affiliateOrg,
     socialRoles: entity.socialRoles,
+    professionalTitle: entity.professionalTitle,
     status: entity.status as MentorProfileStatus,
   };
 }

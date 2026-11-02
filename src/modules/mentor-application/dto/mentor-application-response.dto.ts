@@ -112,6 +112,17 @@ export class MentorProfileDraft {
     nullable: true,
   })
   socialRoles!: string | null;
+
+  @ApiProperty({
+    type: String,
+    description:
+      '职称 / 资质，自由文本，≤ 100 字符（R28）。**内校 / 外校都填**（与 affiliateOrg / ' +
+      'socialRoles 不同，不置 null）。**旧快照（Task 20c 之前落库的）没有这个键**，' +
+      '读取时归一为 null',
+    example: '教授',
+    nullable: true,
+  })
+  professionalTitle!: string | null;
 }
 
 /**

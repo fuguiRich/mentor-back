@@ -38,6 +38,30 @@ const SOFT_DELETE_MODELS = new Set<string>([
   // Task 16 补这一个：摘材料是软删（R63），软删后同一 fileId 允许再挂——
   // 唯一性按「未删行」算，靠读过滤天然成立
   'MentorApplicationMaterial',
+  // Task 20 补 P2 预约域五张表。AppointmentMaterial / GuidanceMaterial 虽然像
+  // 连接表，但「摘材料不删文件」——软删保留行、文件照旧，故走软删而非 DB-10 的
+  // 物理删（这是 DB-10 的显式例外）。
+  'MentorTimeSlot',
+  'Appointment',
+  'AppointmentMaterial',
+  'GuidanceRecord',
+  'GuidanceMaterial',
+  // P3 Task 33 补这一个：一条预约一条评价，软删后同一预约可再评价——
+  // 唯一性按「未删行」算（`uk_student_review_appointment_active`），
+  // 靠读过滤 + 生成列天然成立
+  'StudentReview',
+  // P3 Task 35 补这一个：成果摘除是软删（`DELETE /mentors/:id/achievements/:aid`），
+  // 软删后不参与考核统计
+  'Achievement',
+  // P3 Task 37 补这两个：考核与申诉都有软删列，读路径要统一过滤
+  'Assessment',
+  'AssessmentAppeal',
+  // P4 Task 51：归档条目也是软删（取消归档 = 软删），读路径要统一过滤
+  'ArchiveItem',
+  // P5 Task 58：站内消息软删，读路径统一过滤
+  'Message',
+  // P5 Task 59：学生成果软删，读路径统一过滤
+  'StudentAchievement',
 ]);
 
 /**
