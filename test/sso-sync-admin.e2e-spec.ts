@@ -1,7 +1,5 @@
-import type { Server } from 'node:http';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
-import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/bootstrap';
 import type { ResponseEnvelope } from '../src/common/interceptors/response.interceptor';

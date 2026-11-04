@@ -1,11 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import {
-  constants,
-  createHmac,
-  publicEncrypt,
-  randomBytes,
-} from 'node:crypto';
+import { constants, createHmac, publicEncrypt, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { Agent } from 'undici';
 import type { AppConfig } from '../../../config/configuration';
@@ -120,7 +115,7 @@ export class SsoApiLoginClient {
         ...(this.getDispatcher() === null
           ? {}
           : { dispatcher: this.getDispatcher() }),
-      } as RequestInit & { dispatcher?: Agent });
+      });
     } catch (error: unknown) {
       // 只有这一条分支允许回退本地密码：网络层根本没到达 SSO。
       throw new SsoApiError(
@@ -172,11 +167,7 @@ export class SsoApiLoginClient {
       // 5xx 常见是网关的 HTML 错误页：仍按「上游不可用」归类，
       // 不能因为解析失败就把 5xx 降级成 invalid 而丢掉回退判断。
       const kind = response.status >= 500 ? 'unavailable' : 'invalid';
-      throw new SsoApiError(
-        kind,
-        '统一认证返回的不是 JSON',
-        response.status,
-      );
+      throw new SsoApiError(kind, '统一认证返回的不是 JSON', response.status);
     }
   }
 

@@ -96,10 +96,7 @@ export class SsoOpenApiClient {
     return body.items.flatMap((school) => school.colleges ?? []);
   }
 
-  private async getPaged<T>(
-    path: string,
-    since: Date | null,
-  ): Promise<T[]> {
+  private async getPaged<T>(path: string, since: Date | null): Promise<T[]> {
     const pageSize = this.config.getOrThrow('sso.syncPageSize', {
       infer: true,
     });
@@ -146,9 +143,7 @@ export class SsoOpenApiClient {
     throw new SsoOpenApiError(401, 'SSO 开放接口令牌无效');
   }
 
-  private async send<T>(
-    url: URL,
-  ): Promise<{ status: number; body: T }> {
+  private async send<T>(url: URL): Promise<{ status: number; body: T }> {
     const token = await this.getToken();
     const timeoutMs = this.config.getOrThrow('sso.apiLoginTimeoutMs', {
       infer: true,
@@ -165,7 +160,7 @@ export class SsoOpenApiClient {
         ...(this.getDispatcher() === null
           ? {}
           : { dispatcher: this.getDispatcher() }),
-      } as RequestInit & { dispatcher?: Agent });
+      });
     } catch (error: unknown) {
       throw new SsoOpenApiError(
         null,
@@ -227,7 +222,7 @@ export class SsoOpenApiClient {
         ...(this.getDispatcher() === null
           ? {}
           : { dispatcher: this.getDispatcher() }),
-      } as RequestInit & { dispatcher?: Agent });
+      });
     } catch (error: unknown) {
       throw new SsoOpenApiError(
         null,

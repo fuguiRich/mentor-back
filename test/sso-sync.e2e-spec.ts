@@ -20,10 +20,8 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
-function fakeFetch(
-  handler: (url: URL) => Response,
-): typeof fetch {
-  return (async (input: string | URL | Request) => {
+function fakeFetch(handler: (url: URL) => Response): typeof fetch {
+  return (input: string | URL | Request) => {
     const raw =
       typeof input === 'string'
         ? input
@@ -31,7 +29,7 @@ function fakeFetch(
           ? input.toString()
           : input.url;
     return handler(new URL(raw));
-  }) as unknown as typeof fetch;
+  };
 }
 
 const ORG_TREE = [
@@ -59,12 +57,7 @@ const CLASSES = [
 ];
 
 async function clearSyncTables(prisma: PrismaService): Promise<void> {
-  const tables = [
-    'mentor_profile',
-    'sync_person',
-    'sync_org_unit',
-    'sync_run',
-  ];
+  const tables = ['mentor_profile', 'sync_person', 'sync_org_unit', 'sync_run'];
   for (const table of tables) {
     await prisma.client.$executeRawUnsafe(`DELETE FROM ${table}`);
   }
@@ -225,9 +218,8 @@ describe('SSO 定时同步 (e2e)', () => {
     });
     expect(teacher).toMatchObject({ authSource: 'sso', status: 1 });
     expect(
-      (
-        await prisma.client.syncPerson.findFirst({ where: { login: 'T1' } })
-      )?.personType,
+      (await prisma.client.syncPerson.findFirst({ where: { login: 'T1' } }))
+        ?.personType,
     ).toBe('teacher');
 
     const student = await prisma.client.sysUser.findFirst({
@@ -235,9 +227,8 @@ describe('SSO 定时同步 (e2e)', () => {
     });
     expect(student).toMatchObject({ authSource: 'sso', status: 1 });
     expect(
-      (
-        await prisma.client.syncPerson.findFirst({ where: { login: 'S1' } })
-      )?.personType,
+      (await prisma.client.syncPerson.findFirst({ where: { login: 'S1' } }))
+        ?.personType,
     ).toBe('student');
 
     const mentorRole = await prisma.client.sysRole.findFirst({
@@ -288,9 +279,11 @@ describe('SSO 定时同步 (e2e)', () => {
         password: 'x',
         realName: '外校导师',
         employeeNo: 'EXT1',
-        deptId: (await prisma.client.sysDept.findFirstOrThrow({
-          where: { name: '计算机学院' },
-        })).id,
+        deptId: (
+          await prisma.client.sysDept.findFirstOrThrow({
+            where: { name: '计算机学院' },
+          })
+        ).id,
         status: 1,
         isSuperAdmin: false,
         authSource: 'local',
@@ -323,7 +316,10 @@ describe('SSO 定时同步 (e2e)', () => {
       if (url.pathname.endsWith('/open/edu/classes')) {
         return json({ code: 200, total: 0, items: [] });
       }
-      if (url.pathname.endsWith('/data/teachers') || url.pathname.endsWith('/data/students')) {
+      if (
+        url.pathname.endsWith('/data/teachers') ||
+        url.pathname.endsWith('/data/students')
+      ) {
         return json({
           code: 200,
           total: 0,

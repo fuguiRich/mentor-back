@@ -882,13 +882,13 @@ describe('信息修改申请 (e2e)', () => {
     // P4 的统计 / 导出 / 归档：85/112 → 88/118
     // （`/stats/*` 5 条、4 条 `/export`、`/me/records/export`，以及归档的
     // `/archives`、`/archives/purge`、`/archives/{id}`）
-    // P5 的学期规则 / 消息 / 学生成果：88/118 → 97/129
-    expect(paths).toHaveLength(97);
+    // P5 的学期规则 / 消息 / 学生成果：88/118 → 99/131
+    expect(paths).toHaveLength(99);
     let operations = 0;
     for (const path of paths) {
       operations += methodsOf(path).length;
     }
-    expect(operations).toBe(129);
+    expect(operations).toBe(131);
   });
 
   it('判据 21（R28）：旧快照缺 professionalTitle 键 → GET 详情不报错，归一为 null', async () => {

@@ -103,14 +103,6 @@ describe('同步框架 + 投影 (e2e)', () => {
     return run.detail as unknown as SyncRunDetail;
   }
 
-  async function readFinishedAt(runId: bigint): Promise<Date> {
-    const run = await prisma.client.syncRun.findFirst({ where: { id: runId } });
-    if (run === null || run.finishedAt === null) {
-      throw new Error(`流水 ${runId} 没有 finishedAt`);
-    }
-    return run.finishedAt;
-  }
-
   async function readStartedAt(runId: bigint): Promise<Date> {
     const run = await prisma.client.syncRun.findFirst({ where: { id: runId } });
     if (run === null) {

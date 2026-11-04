@@ -40,7 +40,7 @@ describe('buildOpenApiSign', () => {
 describe('SsoOpenApiClient', () => {
   it('token 缓存；业务接口 401 时刷新一次并重试', async () => {
     const calls: string[] = [];
-    const fetchImpl = jest.fn(async (url: string) => {
+    const fetchImpl = jest.fn((url: string) => {
       calls.push(url);
       if (url.endsWith('/auth/token')) {
         return json({ code: 200, token: 't1', expiresIn: 300 });
@@ -66,7 +66,7 @@ describe('SsoOpenApiClient', () => {
 
   it('分页：totalPages=3 时拉三页', async () => {
     const pages: number[] = [];
-    const fetchImpl = jest.fn(async (url: string) => {
+    const fetchImpl = jest.fn((url: string) => {
       if (url.endsWith('/auth/token')) {
         return json({ code: 200, token: 't', expiresIn: 300 });
       }
@@ -78,7 +78,13 @@ describe('SsoOpenApiClient', () => {
         page,
         pageSize: 1,
         totalPages: 3,
-        items: [{ workId: `T${page}`, name: `教师${page}`, organization: '计算机学院' }],
+        items: [
+          {
+            workId: `T${page}`,
+            name: `教师${page}`,
+            organization: '计算机学院',
+          },
+        ],
       });
     }) as unknown as typeof fetch;
 
@@ -89,7 +95,7 @@ describe('SsoOpenApiClient', () => {
   });
 
   it('updateTime 传毫秒时间戳', async () => {
-    const fetchImpl = jest.fn(async (url: string) => {
+    const fetchImpl = jest.fn((url: string) => {
       if (url.includes('/data/students')) {
         expect(new URL(url).searchParams.get('updateTime')).toBe(
           '1780371234000',
@@ -110,7 +116,7 @@ describe('SsoOpenApiClient', () => {
   });
 
   it('非 2xx / code !== 200 → SsoOpenApiError', async () => {
-    const fetchImpl = jest.fn(async (url: string) => {
+    const fetchImpl = jest.fn((url: string) => {
       if (url.endsWith('/auth/token')) {
         return json({ code: 200, token: 't', expiresIn: 300 });
       }

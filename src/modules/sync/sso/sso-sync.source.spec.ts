@@ -5,11 +5,11 @@ function makeSource(
   overrides: Partial<Record<keyof SsoOpenApiClient, unknown>>,
 ): SsoSyncSource {
   const client = {
-    getOrgDepartments: async () => [],
-    getTeachers: async () => [],
-    getStudents: async () => [],
-    getClasses: async () => [],
-    getEduOrg: async () => [],
+    getOrgDepartments: () => [],
+    getTeachers: () => [],
+    getStudents: () => [],
+    getClasses: () => [],
+    getEduOrg: () => [],
     ...overrides,
   } as unknown as SsoOpenApiClient;
   return new SsoSyncSource(client);
@@ -18,7 +18,7 @@ function makeSource(
 describe('SsoSyncSource', () => {
   it('组织树摊平：parentId=0 → parentCode=null，code 加 sso: 前缀', async () => {
     const source = makeSource({
-      getOrgDepartments: async () => [
+      getOrgDepartments: () => [
         {
           deptId: '1',
           parentId: '0',
@@ -50,7 +50,7 @@ describe('SsoSyncSource', () => {
 
   it('教师按部门名映射到 sso:code；学生按班级→学院映射', async () => {
     const source = makeSource({
-      getOrgDepartments: async () => [
+      getOrgDepartments: () => [
         {
           deptId: '1',
           parentId: '0',
@@ -65,13 +65,13 @@ describe('SsoSyncSource', () => {
           ],
         },
       ],
-      getTeachers: async () => [
+      getTeachers: () => [
         { workId: 'T1', name: '张三', organization: '计算机学院' },
       ],
-      getStudents: async () => [
+      getStudents: () => [
         { studentId: 'S1', name: '李四', organization: '软工2301' },
       ],
-      getClasses: async () => [
+      getClasses: () => [
         {
           class_name: '软工2301',
           college_name: '计算机学院',
@@ -100,12 +100,12 @@ describe('SsoSyncSource', () => {
 
   it('映射不到 → unresolved:...，交给 SyncService 记 org_not_found', async () => {
     const source = makeSource({
-      getOrgDepartments: async () => [],
-      getTeachers: async () => [
+      getOrgDepartments: () => [],
+      getTeachers: () => [
         { workId: 'T2', name: '王五', organization: '不存在学院' },
       ],
-      getStudents: async () => [],
-      getClasses: async () => [],
+      getStudents: () => [],
+      getClasses: () => [],
     });
 
     const persons = await source.fetchPersons(null);

@@ -963,14 +963,14 @@ describe('两级审核流 (e2e)', () => {
     // `/mentors/{mentorId}/reviews` 的 get）（65/87 → 67/90）；
     // P3 Task 36 的成果再加 2 路径 / 4 操作（67/90 → 69/94）
     // P4 的统计 / 导出 / 归档：85/112 → 88/118
-    // P5 的学期规则 / 消息 / 学生成果：88/118 → 97/129
+    // P5 的学期规则 / 消息 / 学生成果：88/118 → 99/131
     const paths = Object.keys(document.paths);
-    expect(paths).toHaveLength(97);
+    expect(paths).toHaveLength(99);
     let operations = 0;
     for (const path of paths) {
       operations += methodsOf(path).length;
     }
-    expect(operations).toBe(129);
+    expect(operations).toBe(131);
   });
 
   it('补 P2-A：deptAndChildren 的 college-admin-a 审外院申请 → 403 / 10003，申请行逐字不变', async () => {

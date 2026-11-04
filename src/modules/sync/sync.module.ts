@@ -27,7 +27,8 @@ import { SyncController } from './sync.controller';
     {
       provide: SsoOpenApiClient,
       // 第二个参数是测试注入的 fetch；工厂避开 Nest 把它当依赖解析
-      useFactory: (config: ConfigService) => new SsoOpenApiClient(config as never),
+      useFactory: (config: ConfigService) =>
+        new SsoOpenApiClient(config as never),
       inject: [ConfigService],
     },
     SsoSyncSource,

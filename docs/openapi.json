@@ -27,7 +27,7 @@
     },
     "/auth/login": {
       "post": {
-        "description": "用用户名与密码换取一对令牌。响应里 expiresIn 是 access 令牌的剩余秒数，前端用它提前刷新，不必自己解 JWT。失败一律返回 401，且「用户名不存在」与「密码错误」的错误码与文案**完全相同**——任何差异都会变成一张用户名清单。连续 5 次失败会锁定 15 分钟，锁定期内即使密码正确也拒绝。",
+        "description": "`SSO_LOGIN_ENABLED=true` 时：SSO 账号先调学校统一认证 api-login，成功后回写本地信息与密码；**只有网络层不可达（超时 / DNS / 连接失败 / TLS）才回退本地 bcrypt**，SSO 明确返回密码错误 / 锁定 / 应用禁用时一律不回退。本地账号（authSource=local，超管与管理员）始终走本地密码。响应里的 loginSource 告诉前端本次是 sso / local / local-fallback。连续 5 次本地密码失败会锁定 15 分钟；SSO 的锁定由统一认证自己负责。",
         "operationId": "AuthController_login",
         "parameters": [],
         "requestBody": {
@@ -94,7 +94,7 @@
             }
           }
         },
-        "summary": "本地密码登录",
+        "summary": "登录（统一认证优先，网络不可达时回退本地密码）",
         "tags": [
           "认证"
         ],
@@ -3235,9 +3235,132 @@
         ]
       }
     },
+    "/sync/sso/run": {
+      "post": {
+        "description": "立即开一条 RUNNING 流水并返回 runId，同步在后台执行——全量同步可能超过网关超时，不能同步等待。用 `GET /sync/runs` 查状态。仅超管或持有 `sync:run` 的账号可调。",
+        "operationId": "SyncController_runSso",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunSyncDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "已受理，返回流水 ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "example": {
+                    "runId": "1"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数失败（10001）。管道校验失败时 data.fields 给出逐字段清单（schema 如右）；业务层参数失败时 data 为 null。详见全局说明",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "没有 sync:run 权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "example": {
+                    "code": 10003,
+                    "message": "无权限",
+                    "data": null
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "手动触发一次 SSO 同步",
+        "tags": [
+          "同步"
+        ]
+      }
+    },
+    "/sync/runs": {
+      "get": {
+        "description": "按开始时间倒序返回流水，不返回 `detail`（失败明细可能很大）。`source` 不传表示全部来源。",
+        "operationId": "SyncController_listRuns",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "页码，从 1 开始；不传时为 1",
+            "schema": {
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "每页条数，最大 100；不传时为 20",
+            "schema": {
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "source",
+            "required": false,
+            "in": "query",
+            "description": "数据源标识，如 sso；不传表示全部来源",
+            "schema": {
+              "example": "sso",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncRunPageResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数失败（10001）。管道校验失败时 data.fields 给出逐字段清单（schema 如右）；业务层参数失败时 data 为 null。详见全局说明",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "查同步流水",
+        "tags": [
+          "同步"
+        ]
+      }
+    },
     "/mentor/profile": {
       "get": {
-        "description": "返回本人的专业档案（一人一行，挂在 SyncPerson 上；身份靠 SysUser.username ↔ SyncPerson.login 的自然键解析，不收任何 id 入参）。**全状态可读**——R55 只关写不关读。未建档返回 **404 / 31102**（GET 不做自动建行，读接口不许有写副作用）。调用者不是导师（personType ∉ {internalMentor, externalMentor}，含学生）返回 **403 / 10003**——学生永远不会有导师档案，给 404 会让人以为再试一次就有了。mentorType 不落列，由 SyncPerson.personType 推导（internalMentor→internal，externalMentor→external）。",
+        "description": "返回本人的专业档案（一人一行，挂在 SyncPerson 上；身份靠 SysUser.username ↔ SyncPerson.login 的自然键解析，不收任何 id 入参）。**全状态可读**——R55 只关写不关读。未建档返回 **404 / 31102**（GET 不做自动建行，读接口不许有写副作用）。调用者不是导师（personType ∉ {internalMentor, externalMentor}，含学生）返回 **403 / 10003**——学生永远不会有导师档案，给 404 会让人以为再试一次就有了。mentorType 不落列，由 SyncPerson.personType 推导（internalMentor/teacher→internal，externalMentor→external）。",
         "operationId": "MentorController_findMyProfile",
         "parameters": [],
         "responses": {
@@ -3258,7 +3381,7 @@
                 "schema": {
                   "example": {
                     "code": 10003,
-                    "message": "只有导师（internalMentor / externalMentor）有专业档案",
+                    "message": "只有导师（internalMentor / externalMentor / teacher）有专业档案",
                     "data": null
                   }
                 }
@@ -3327,7 +3450,7 @@
                 "schema": {
                   "example": {
                     "code": 10003,
-                    "message": "只有导师（internalMentor / externalMentor）有专业档案",
+                    "message": "只有导师（internalMentor / externalMentor / teacher）有专业档案",
                     "data": null
                   }
                 }
@@ -3518,7 +3641,7 @@
                 "schema": {
                   "example": {
                     "code": 10003,
-                    "message": "只有导师（internalMentor / externalMentor）有专业档案",
+                    "message": "只有导师（internalMentor / externalMentor / teacher）有专业档案",
                     "data": null
                   }
                 }
@@ -3701,7 +3824,7 @@
                 "schema": {
                   "example": {
                     "code": 10003,
-                    "message": "只有导师（internalMentor / externalMentor）有专业档案",
+                    "message": "只有导师（internalMentor / externalMentor / teacher）有专业档案",
                     "data": null
                   }
                 }
@@ -4196,7 +4319,7 @@
                     {
                       "example": {
                         "code": 10003,
-                        "message": "只有导师（internalMentor / externalMentor）能管理佐证材料",
+                        "message": "只有导师（internalMentor / externalMentor / teacher）能管理佐证材料",
                         "data": null
                       }
                     }
@@ -4388,7 +4511,7 @@
                     {
                       "example": {
                         "code": 10003,
-                        "message": "只有导师（internalMentor / externalMentor）能管理佐证材料",
+                        "message": "只有导师（internalMentor / externalMentor / teacher）能管理佐证材料",
                         "data": null
                       }
                     }
@@ -11008,7 +11131,7 @@
   },
   "info": {
     "title": "mentor-back API",
-    "description": "统一响应外壳：成功 `{ code: 0, message: \"ok\", data, traceId }`；失败 `{ code: <业务错误码>, message: <文案>, traceId }`。`data` 的形状看**失败的来源**，不看错误码：class-validator 管道校验失败（10001）为 `{ fields: [{ field, message }] }`（逐字段清单）；业务层抛出的失败——**包括业务层自己的 10001 参数错误**——`data` 为 `null`。HTTP 状态码保留传输语义。\n\n业务接口与通用后台共用同一份响应外壳；业务错误码从 30000 起，通用后台已占用 10000-28999。\n\n错误码一览（由 `ErrorCode` 枚举生成）：\n- 10000 服务器内部错误\n- 10001 参数校验失败\n- 10002 未认证\n- 10003 无权限\n- 10004 资源不存在\n- 10005 请求过于频繁\n- 10006 数据冲突，请刷新后重试\n- 20101 用户名或密码错误\n- 20102 账号已停用，请联系管理员\n- 20103 登录失败次数过多，请稍后再试\n- 20104 登录状态已失效，请重新登录\n- 20105 原密码错误\n- 20106 统一认证未通过，请重新发起登录\n- 20107 统一认证已通过，但本系统没有对应账号，请联系管理员\n- 21101 用户不存在\n- 21102 用户名已存在\n- 21103 工号已存在\n- 21104 手机号已存在\n- 21105 超级管理员受保护，不能执行该操作\n- 22101 角色不存在\n- 22102 角色编码已存在\n- 23101 权限点不存在\n- 23102 权限码已存在\n- 23103 菜单与按钮类型必须设置权限码\n- 23104 目录类型不能设置权限码\n- 23105 上级权限点不能是自己或自己的下级\n- 23106 该权限点下还有下级，请先移走或删除\n- 24101 部门不存在\n- 24102 同级下已存在同名部门\n- 24103 该部门下还有下级部门，请先移走或删除\n- 24104 该部门下还有用户，请先调整他们的归属\n- 24105 上级部门不能是自己或自己的下级部门\n- 25101 字典类型不存在\n- 25102 字典类型编码已存在\n- 25103 该字典类型下还有字典项，请先移走或删除\n- 25104 字典项不存在\n- 25105 同字典类型下已存在相同的字典值\n- 26101 系统配置不存在\n- 26102 系统配置编码已存在\n- 26103 配置值类型只能是 string / number / boolean / json\n- 26104 配置值与声明的类型不符\n- 27101 操作日志不存在\n- 28101 文件不存在\n- 28102 不支持的文件类型\n- 28103 文件超出大小上限\n- 28104 上传内容为空\n- 28105 一次上传的文件数超限\n- 28106 文件内容与扩展名不符\n- 30101 同步层的表由同步任务维护，不接受业务写入\n- 31101 导师已入驻，不能重复提交入驻申请\n- 31102 导师专业档案不存在\n- 31103 导师档案当前状态不允许提交入驻申请\n- 31104 入驻申请不存在\n- 31105 当前状态不允许该操作\n- 31106 已有在审的申请，不能重复提交\n- 31107 佐证材料不存在\n- 31201 可指导时段不存在\n- 31202 可指导时段不可用\n- 31206 该时段与已有开放时段重叠\n- 32001 预约不存在\n- 32002 无权访问该预约\n- 32003 当前状态不允许该操作\n- 32004 该时段已被预约占用\n- 32005 预约材料不存在\n- 32006 该材料已挂接\n- 33001 指导记录不存在\n- 33002 过程材料不存在\n- 34001 该预约还没有评价\n- 34002 该预约已评价过\n- 34003 当前状态不允许评价\n- 35001 考核不存在\n- 35002 当前状态不允许该操作\n- 35003 该导师本周期已有考核\n- 35004 考核申诉不存在\n- 35005 该考核已有待处理的申诉\n- 35006 当前考核状态不允许申诉\n- 36001 双创成果不存在\n- 37001 归档条目不存在\n- 37002 该记录已归档\n- 37004 导出结果超过上限，请缩小查询范围\n- 38001 消息不存在\n- 39001 学生成果不存在\n- 39002 该成果已关联导师",
+    "description": "统一响应外壳：成功 `{ code: 0, message: \"ok\", data, traceId }`；失败 `{ code: <业务错误码>, message: <文案>, traceId }`。`data` 的形状看**失败的来源**，不看错误码：class-validator 管道校验失败（10001）为 `{ fields: [{ field, message }] }`（逐字段清单）；业务层抛出的失败——**包括业务层自己的 10001 参数错误**——`data` 为 `null`。HTTP 状态码保留传输语义。\n\n业务接口与通用后台共用同一份响应外壳；业务错误码从 30000 起，通用后台已占用 10000-28999。\n\n错误码一览（由 `ErrorCode` 枚举生成）：\n- 10000 服务器内部错误\n- 10001 参数校验失败\n- 10002 未认证\n- 10003 无权限\n- 10004 资源不存在\n- 10005 请求过于频繁\n- 10006 数据冲突，请刷新后重试\n- 20101 用户名或密码错误\n- 20102 账号已停用，请联系管理员\n- 20103 登录失败次数过多，请稍后再试\n- 20104 登录状态已失效，请重新登录\n- 20105 原密码错误\n- 20106 统一认证未通过，请重新发起登录\n- 20107 统一认证已通过，但本系统没有对应账号，请联系管理员\n- 20108 统一认证暂不可用，请稍后重试\n- 20109 统一认证配置异常，请联系管理员\n- 20110 统一认证请求过于频繁，请稍后重试\n- 20111 统一认证返回异常，请稍后重试\n- 20112 统一认证账号请在统一认证平台修改密码\n- 20113 统一认证已通过，但本地账号创建失败，请联系管理员\n- 21101 用户不存在\n- 21102 用户名已存在\n- 21103 工号已存在\n- 21104 手机号已存在\n- 21105 超级管理员受保护，不能执行该操作\n- 22101 角色不存在\n- 22102 角色编码已存在\n- 23101 权限点不存在\n- 23102 权限码已存在\n- 23103 菜单与按钮类型必须设置权限码\n- 23104 目录类型不能设置权限码\n- 23105 上级权限点不能是自己或自己的下级\n- 23106 该权限点下还有下级，请先移走或删除\n- 24101 部门不存在\n- 24102 同级下已存在同名部门\n- 24103 该部门下还有下级部门，请先移走或删除\n- 24104 该部门下还有用户，请先调整他们的归属\n- 24105 上级部门不能是自己或自己的下级部门\n- 25101 字典类型不存在\n- 25102 字典类型编码已存在\n- 25103 该字典类型下还有字典项，请先移走或删除\n- 25104 字典项不存在\n- 25105 同字典类型下已存在相同的字典值\n- 26101 系统配置不存在\n- 26102 系统配置编码已存在\n- 26103 配置值类型只能是 string / number / boolean / json\n- 26104 配置值与声明的类型不符\n- 27101 操作日志不存在\n- 28101 文件不存在\n- 28102 不支持的文件类型\n- 28103 文件超出大小上限\n- 28104 上传内容为空\n- 28105 一次上传的文件数超限\n- 28106 文件内容与扩展名不符\n- 30101 同步层的表由同步任务维护，不接受业务写入\n- 31101 导师已入驻，不能重复提交入驻申请\n- 31102 导师专业档案不存在\n- 31103 导师档案当前状态不允许提交入驻申请\n- 31104 入驻申请不存在\n- 31105 当前状态不允许该操作\n- 31106 已有在审的申请，不能重复提交\n- 31107 佐证材料不存在\n- 31201 可指导时段不存在\n- 31202 可指导时段不可用\n- 31206 该时段与已有开放时段重叠\n- 32001 预约不存在\n- 32002 无权访问该预约\n- 32003 当前状态不允许该操作\n- 32004 该时段已被预约占用\n- 32005 预约材料不存在\n- 32006 该材料已挂接\n- 33001 指导记录不存在\n- 33002 过程材料不存在\n- 34001 该预约还没有评价\n- 34002 该预约已评价过\n- 34003 当前状态不允许评价\n- 35001 考核不存在\n- 35002 当前状态不允许该操作\n- 35003 该导师本周期已有考核\n- 35004 考核申诉不存在\n- 35005 该考核已有待处理的申诉\n- 35006 当前考核状态不允许申诉\n- 36001 双创成果不存在\n- 37001 归档条目不存在\n- 37002 该记录已归档\n- 37004 导出结果超过上限，请缩小查询范围\n- 38001 消息不存在\n- 39001 学生成果不存在\n- 39002 该成果已关联导师",
     "version": "1.0",
     "contact": {}
   },
@@ -11135,6 +11258,26 @@
             "type": "number",
             "description": "访问令牌剩余有效秒数。前端用它提前刷新，不必自己解 JWT",
             "example": 7200
+          },
+          "loginSource": {
+            "type": "string",
+            "description": "本次登录来源：sso = 统一认证；local = 本地账号；local-fallback = 统一认证网络不可达时回退本地密码。仅 POST /auth/login 返回",
+            "enum": [
+              "sso",
+              "local",
+              "local-fallback"
+            ]
+          },
+          "ssoUnavailable": {
+            "type": "boolean",
+            "description": "是否因统一认证不可用而回退本地密码。仅 POST /auth/login 返回",
+            "example": false
+          },
+          "isDefaultPwd": {
+            "type": "boolean",
+            "description": "统一认证返回的「是否仍在使用初始默认密码」。true 时前端应提示去统一认证平台改密，但不要拦截登录。仅 POST /auth/login 返回",
+            "example": false,
+            "nullable": true
           }
         },
         "required": [
@@ -11223,6 +11366,15 @@
             "description": "超管标志。为 true 时跳过全部权限检查",
             "example": false
           },
+          "authSource": {
+            "type": "string",
+            "description": "登录来源：local = 本地账号（超管/管理员）；sso = 统一认证账号。前端据此隐藏本地改密入口",
+            "enum": [
+              "local",
+              "sso"
+            ],
+            "example": "local"
+          },
           "lastLoginAt": {
             "type": "string",
             "description": "最后登录时间（UTC，ISO 8601）",
@@ -11271,6 +11423,7 @@
           "deptName",
           "status",
           "isSuperAdmin",
+          "authSource",
           "lastLoginAt",
           "createdAt",
           "updatedAt",
@@ -11501,6 +11654,15 @@
             "description": "超管标志。为 true 时跳过全部权限检查",
             "example": false
           },
+          "authSource": {
+            "type": "string",
+            "description": "登录来源：local = 本地账号（超管/管理员）；sso = 统一认证账号。前端据此隐藏本地改密入口",
+            "enum": [
+              "local",
+              "sso"
+            ],
+            "example": "local"
+          },
           "lastLoginAt": {
             "type": "string",
             "description": "最后登录时间（UTC，ISO 8601）",
@@ -11538,6 +11700,7 @@
           "deptName",
           "status",
           "isSuperAdmin",
+          "authSource",
           "lastLoginAt",
           "createdAt",
           "updatedAt",
@@ -13271,6 +13434,114 @@
           "pageSize"
         ]
       },
+      "RunSyncDto": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "description": "同步模式；不传按增量（没有可用水位时自动退化为全量）",
+            "enum": [
+              "incremental",
+              "full"
+            ],
+            "example": "incremental"
+          }
+        }
+      },
+      "SyncRunResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "流水 ID",
+            "example": "1"
+          },
+          "source": {
+            "type": "string",
+            "description": "数据源标识",
+            "example": "sso"
+          },
+          "mode": {
+            "type": "string",
+            "description": "本次跑的模式：incremental / full；历史行可能为空",
+            "enum": [
+              "incremental",
+              "full"
+            ],
+            "nullable": true
+          },
+          "status": {
+            "type": "number",
+            "description": "0 RUNNING / 1 OK / 2 PARTIAL / 3 FAILED",
+            "example": 1
+          },
+          "startedAt": {
+            "type": "string",
+            "description": "开始时间（UTC ISO 8601）"
+          },
+          "finishedAt": {
+            "type": "string",
+            "description": "结束时间（UTC ISO 8601）；RUNNING 时为空",
+            "nullable": true
+          },
+          "total": {
+            "type": "number",
+            "description": "本次处理的总行数",
+            "example": 100
+          },
+          "okCount": {
+            "type": "number",
+            "description": "成功行数",
+            "example": 98
+          },
+          "failCount": {
+            "type": "number",
+            "description": "失败行数",
+            "example": 2
+          }
+        },
+        "required": [
+          "id",
+          "source",
+          "status",
+          "startedAt",
+          "total",
+          "okCount",
+          "failCount"
+        ]
+      },
+      "SyncRunPageResponseDto": {
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SyncRunResponseDto"
+            }
+          },
+          "total": {
+            "type": "number",
+            "description": "总条数",
+            "example": 42
+          },
+          "page": {
+            "type": "number",
+            "description": "页码",
+            "example": 1
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "每页条数",
+            "example": 20
+          }
+        },
+        "required": [
+          "rows",
+          "total",
+          "page",
+          "pageSize"
+        ]
+      },
       "MentorProfileResponseDto": {
         "type": "object",
         "properties": {
@@ -13286,7 +13557,7 @@
           },
           "mentorType": {
             "type": "string",
-            "description": "导师类型：internal 校内 / external 校外。**不落列**——由 SyncPerson.personType 推导（internalMentor→internal，externalMentor→external），冗余一份就会跟同步源漂移",
+            "description": "导师类型：internal 校内 / external 校外。**不落列**——由 SyncPerson.personType 推导（internalMentor/teacher→internal，externalMentor→external），冗余一份就会跟同步源漂移",
             "enum": [
               "internal",
               "external"

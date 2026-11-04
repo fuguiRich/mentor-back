@@ -29,6 +29,7 @@ export interface UserProjection {
 
 /** `updateUser` 只读这几个字段；用最小接口而不是 `SysUser`，provisioner 不必伪造整行 */
 export interface UserProjectionSource {
+  id: bigint;
   username: string;
   employeeNo: string;
   realName: string;

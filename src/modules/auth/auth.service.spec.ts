@@ -346,9 +346,7 @@ describe('AuthService 收尾四接口（profile / 改密 / 统一认证）', () 
 
     it('SSO 账号改密 → 403 / 20112', async () => {
       const { service } = buildService({
-        findById: jest
-          .fn()
-          .mockResolvedValue(sysUser({ authSource: 'sso' })),
+        findById: jest.fn().mockResolvedValue(sysUser({ authSource: 'sso' })),
       });
 
       await expect(
@@ -513,11 +511,12 @@ describe('AuthService 收尾四接口（profile / 改密 / 统一认证）', () 
 
     it('authSource=sso + SSO 成功 → 回写密码与信息，loginSource=sso', async () => {
       const { service, stubs } = buildService({
-        findByUsername: jest
-          .fn()
-          .mockResolvedValue(
-            sysUser({ authSource: 'sso', password: hashSync('old', BCRYPT_ROUNDS) }),
-          ),
+        findByUsername: jest.fn().mockResolvedValue(
+          sysUser({
+            authSource: 'sso',
+            password: hashSync('old', BCRYPT_ROUNDS),
+          }),
+        ),
         ssoLogin: jest.fn().mockResolvedValue({
           user: {
             userName: 'E001',
@@ -536,27 +535,25 @@ describe('AuthService 收尾四接口（profile / 改密 / 统一认证）', () 
       });
 
       expect(stubs.ssoLogin).toHaveBeenCalledWith('alice', NEW_PASSWORD);
-      expect(stubs.syncSsoProfile).toHaveBeenCalledWith(
-        1n,
-        expect.objectContaining({
-          realName: '新名字',
-          passwordHash: expect.any(String),
-        }),
-      );
+      const syncCall = stubs.syncSsoProfile.mock.calls[0] as [
+        bigint,
+        { realName: string; passwordHash: string | null },
+      ];
+      expect(syncCall[0]).toBe(1n);
+      expect(syncCall[1].realName).toBe('新名字');
+      expect(typeof syncCall[1].passwordHash).toBe('string');
       expect(tokens.loginSource).toBe('sso');
       expect(tokens.isDefaultPwd).toBe(false);
     });
 
     it('SSO 凭据错误 → 20101，不回退本地', async () => {
       const { service, stubs } = buildService({
-        findByUsername: jest
-          .fn()
-          .mockResolvedValue(
-            sysUser({
-              authSource: 'sso',
-              password: hashSync(NEW_PASSWORD, BCRYPT_ROUNDS),
-            }),
-          ),
+        findByUsername: jest.fn().mockResolvedValue(
+          sysUser({
+            authSource: 'sso',
+            password: hashSync(NEW_PASSWORD, BCRYPT_ROUNDS),
+          }),
+        ),
         ssoLogin: jest
           .fn()
           .mockRejectedValue(new SsoApiError('credentials', '账号或密码错误')),
@@ -572,14 +569,12 @@ describe('AuthService 收尾四接口（profile / 改密 / 统一认证）', () 
 
     it('SSO 不可达 + 本地密码正确 → loginSource=local-fallback', async () => {
       const { service } = buildService({
-        findByUsername: jest
-          .fn()
-          .mockResolvedValue(
-            sysUser({
-              authSource: 'sso',
-              password: hashSync(OLD_PASSWORD, BCRYPT_ROUNDS),
-            }),
-          ),
+        findByUsername: jest.fn().mockResolvedValue(
+          sysUser({
+            authSource: 'sso',
+            password: hashSync(OLD_PASSWORD, BCRYPT_ROUNDS),
+          }),
+        ),
         ssoLogin: jest
           .fn()
           .mockRejectedValue(new SsoApiError('unavailable', 'timeout')),
@@ -596,14 +591,12 @@ describe('AuthService 收尾四接口（profile / 改密 / 统一认证）', () 
 
     it('SSO 不可达 + 本地密码错误 → 20101，并记一次失败', async () => {
       const { service, stubs } = buildService({
-        findByUsername: jest
-          .fn()
-          .mockResolvedValue(
-            sysUser({
-              authSource: 'sso',
-              password: hashSync(OLD_PASSWORD, BCRYPT_ROUNDS),
-            }),
-          ),
+        findByUsername: jest.fn().mockResolvedValue(
+          sysUser({
+            authSource: 'sso',
+            password: hashSync(OLD_PASSWORD, BCRYPT_ROUNDS),
+          }),
+        ),
         ssoLogin: jest
           .fn()
           .mockRejectedValue(new SsoApiError('unavailable', 'timeout')),
@@ -634,14 +627,12 @@ describe('AuthService 收尾四接口（profile / 改密 / 统一认证）', () 
 
     it('SSO 返回 5xx 且 fallbackOn5xx=false → 20108，不回退本地', async () => {
       const { service, stubs } = buildService({
-        findByUsername: jest
-          .fn()
-          .mockResolvedValue(
-            sysUser({
-              authSource: 'sso',
-              password: hashSync(OLD_PASSWORD, BCRYPT_ROUNDS),
-            }),
-          ),
+        findByUsername: jest.fn().mockResolvedValue(
+          sysUser({
+            authSource: 'sso',
+            password: hashSync(OLD_PASSWORD, BCRYPT_ROUNDS),
+          }),
+        ),
         ssoLogin: jest
           .fn()
           .mockRejectedValue(
@@ -670,9 +661,7 @@ describe('AuthService 收尾四接口（profile / 改密 / 统一认证）', () 
           findByUsername: jest
             .fn()
             .mockResolvedValue(sysUser({ authSource: 'sso' })),
-          ssoLogin: jest
-            .fn()
-            .mockRejectedValue(new SsoApiError(kind, kind)),
+          ssoLogin: jest.fn().mockRejectedValue(new SsoApiError(kind, kind)),
         });
 
         await expect(

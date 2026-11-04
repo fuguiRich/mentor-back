@@ -15,7 +15,10 @@ import { PermissionService } from '../permission/permission.service';
 import { UserService } from '../user/user.service';
 import { TokenService } from './token.service';
 import { SSO_PROVIDER, type SsoProvider } from './sso/sso.provider';
-import { SsoApiLoginClient, type SsoLoginUser } from './sso/sso-api-login.client';
+import {
+  SsoApiLoginClient,
+  type SsoLoginUser,
+} from './sso/sso-api-login.client';
 import { SsoApiError } from './sso/sso-error';
 import { SsoUserProvisioner } from '../sync/sso/sso-user-provisioner';
 import type { AppConfig } from '../../config/configuration';

@@ -81,7 +81,9 @@ export function validateEnv(
     const normalized =
       typeof value === 'string' ? value.trim().toLowerCase() : '';
     if (!['1', '0', 'true', 'false'].includes(normalized)) {
-      problems.push(`${key} 只能是 1 / 0 / true / false：${String(value)}`);
+      problems.push(
+        `${key} 只能是 1 / 0 / true / false：${JSON.stringify(value)}`,
+      );
     }
   }
 
@@ -113,7 +115,7 @@ export function validateEnv(
     appSecretMode !== 'plain'
   ) {
     problems.push(
-      `SSO_APP_SECRET_MODE 只能是 rsa 或 plain：${String(appSecretMode)}`,
+      `SSO_APP_SECRET_MODE 只能是 rsa 或 plain：${JSON.stringify(appSecretMode)}`,
     );
   }
 
@@ -130,7 +132,7 @@ export function validateEnv(
     }
     const amount = Number(value);
     if (!Number.isInteger(amount) || amount <= 0) {
-      problems.push(`${key} 必须是正整数：${String(value)}`);
+      problems.push(`${key} 必须是正整数：${JSON.stringify(value)}`);
     }
   }
 
@@ -140,9 +142,7 @@ export function validateEnv(
     openApiPrefix !== '' &&
     !openApiPrefix.startsWith('/')
   ) {
-    problems.push(
-      `SSO_OPENAPI_PREFIX 必须为空或以 / 开头：${openApiPrefix}`,
-    );
+    problems.push(`SSO_OPENAPI_PREFIX 必须为空或以 / 开头：${openApiPrefix}`);
   }
 
   const corsRaw = raw.CORS_ORIGINS;

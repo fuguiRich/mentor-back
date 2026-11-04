@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { Test } from '@nestjs/testing';
@@ -19,15 +20,11 @@ import {
   seedUser,
 } from './e2e-helpers';
 
-type SsoMode = 'success' | 'credentials' | 'locked' | 'unavailable' | 'server_error';
+type SsoMode =
+  'success' | 'credentials' | 'locked' | 'unavailable' | 'server_error';
 
 async function clearSyncTables(prisma: PrismaService): Promise<void> {
-  const tables = [
-    'mentor_profile',
-    'sync_person',
-    'sync_org_unit',
-    'sync_run',
-  ];
+  const tables = ['mentor_profile', 'sync_person', 'sync_org_unit', 'sync_run'];
   for (const table of tables) {
     await prisma.client.$executeRawUnsafe(`DELETE FROM ${table}`);
   }
@@ -118,8 +115,9 @@ describe('SSO 登录（api-login 优先 + 本地回退）(e2e)', () => {
 
     // 必须在 require AppModule 之前设好环境变量（ConfigModule 在导入时加载）。
     // 用 require 而不是 import：ts-jest 的 CJS 环境不支持动态 import()。
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { AppModule } = require('../src/app.module') as typeof import('../src/app.module');
+
+    const { AppModule } =
+      require('../src/app.module') as typeof import('../src/app.module');
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();

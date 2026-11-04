@@ -23,9 +23,7 @@ import { SyncService } from './sync.service';
 import { SsoSyncSource } from './sso/sso-sync.source';
 import { QuerySyncRunDto } from './dto/query-sync-run.dto';
 import { RunSyncDto } from './dto/run-sync.dto';
-import {
-  SyncRunPageResponseDto,
-} from './dto/sync-run-page-response.dto';
+import { SyncRunPageResponseDto } from './dto/sync-run-page-response.dto';
 import { toSyncRunResponse } from './dto/sync-run-response.dto';
 
 @ApiTags('同步')

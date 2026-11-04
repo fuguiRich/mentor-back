@@ -25,6 +25,7 @@ export class SyncRunResponseDto {
   startedAt!: string;
 
   @ApiPropertyOptional({
+    type: String,
     description: '结束时间（UTC ISO 8601）；RUNNING 时为空',
     nullable: true,
   })
@@ -44,8 +45,7 @@ export function toSyncRunResponse(run: SyncRun): SyncRunResponseDto {
   return {
     id: run.id.toString(),
     source: run.source,
-    mode:
-      run.mode === 'incremental' || run.mode === 'full' ? run.mode : null,
+    mode: run.mode === 'incremental' || run.mode === 'full' ? run.mode : null,
     status: run.status,
     startedAt: run.startedAt.toISOString(),
     finishedAt: run.finishedAt?.toISOString() ?? null,

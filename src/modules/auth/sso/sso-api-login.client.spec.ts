@@ -59,9 +59,9 @@ describe('classifySsoFailure', () => {
   });
 
   it('HTTP 5xx → unavailable', () => {
-    expect(
-      classifySsoFailure({ httpStatus: 502, body: null }),
-    ).toBe('unavailable');
+    expect(classifySsoFailure({ httpStatus: 502, body: null })).toBe(
+      'unavailable',
+    );
   });
 
   it('未知 msg → invalid', () => {
@@ -76,21 +76,17 @@ describe('classifySsoFailure', () => {
 
 describe('SsoApiLoginClient', () => {
   function clientWith(fetchImpl: typeof fetch) {
-    const config = {
-      get: (key: string) => {
-        const map: Record<string, unknown> = {
-          'sso.baseUrl': 'https://sso.test',
-          'sso.appId': 'app_x',
-          'sso.appSecret': 'secret',
-          'sso.appSecretMode': 'plain',
-          'sso.apiLoginPath': '/sso/login/api-login',
-          'sso.apiLoginTimeoutMs': 1000,
-          'sso.caCertPath': '',
-        };
-        return map[key];
-      },
-      getOrThrow: (key: string) => config.get(key),
-    } as never;
+    const values: Record<string, unknown> = {
+      'sso.baseUrl': 'https://sso.test',
+      'sso.appId': 'app_x',
+      'sso.appSecret': 'secret',
+      'sso.appSecretMode': 'plain',
+      'sso.apiLoginPath': '/sso/login/api-login',
+      'sso.apiLoginTimeoutMs': 1000,
+      'sso.caCertPath': '',
+    };
+    const get = (key: string): unknown => values[key];
+    const config = { get, getOrThrow: get } as never;
     const limiter = {
       consume: jest.fn().mockResolvedValue(undefined),
     } as never;
@@ -133,20 +129,22 @@ describe('SsoApiLoginClient', () => {
       }),
     ) as unknown as typeof fetch;
 
-    await expect(clientWith(fetchImpl).login('T001', 'bad')).rejects.toMatchObject(
-      { kind: 'credentials' },
-    );
+    await expect(
+      clientWith(fetchImpl).login('T001', 'bad'),
+    ).rejects.toMatchObject({ kind: 'credentials' });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it('网络错误 → SsoApiError(kind=unavailable)', async () => {
     const fetchImpl = jest
       .fn()
-      .mockRejectedValue(new TypeError('fetch failed')) as unknown as typeof fetch;
+      .mockRejectedValue(
+        new TypeError('fetch failed'),
+      ) as unknown as typeof fetch;
 
-    await expect(clientWith(fetchImpl).login('T001', 'x')).rejects.toMatchObject(
-      { kind: 'unavailable' },
-    );
+    await expect(
+      clientWith(fetchImpl).login('T001', 'x'),
+    ).rejects.toMatchObject({ kind: 'unavailable' });
   });
 });
 
@@ -173,8 +171,7 @@ describe('SsoRateLimiter', () => {
       client: { incr: jest.fn().mockResolvedValue(1), expire },
     } as never;
     const limiter = new SsoRateLimiter(redis, {
-      getOrThrow: (key: string) =>
-        key === 'sso.appId' ? 'app_x' : 55,
+      getOrThrow: (key: string) => (key === 'sso.appId' ? 'app_x' : 55),
     } as never);
 
     await limiter.consume();
