@@ -18,8 +18,8 @@ export type SyncRunStatusValue =
 /**
  * `personType` → 建号时绑定的默认角色 code（Ruling 24）。
  *
- * 三类 `personType` 与四类角色是两个维度（Ruling 4）：导师在 §1.2 的四类里只有一类，
- * 内外之别是数据（`SyncPerson.personType`）不是权限，所以两类都映到 `mentor`。
+ * 四类 `personType` 与四类角色是两个维度（Ruling 4）：导师在 §1.2 的四类里只有一类，
+ * 内外之别是数据（`SyncPerson.personType`）不是权限，所以三类导师都映到 `mentor`。
  * 另两个角色 `college_admin` / `sc_admin` **不在这里**——管理员不在同步源里，
  * 由超管建号绑角色（Task 6b）。
  *
@@ -29,6 +29,8 @@ export const PERSON_TYPE_ROLE_CODE = {
   student: 'student',
   internalMentor: 'mentor',
   externalMentor: 'mentor',
+  // 统一认证同步来的教师：默认导师角色，等本人提交入驻申请再建档案
+  teacher: 'mentor',
 } as const;
 
 /**

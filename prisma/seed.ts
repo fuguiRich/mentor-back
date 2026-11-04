@@ -128,6 +128,9 @@ const SEED_PERMISSIONS = [
   // 文件列表 / 预览 / 下载共用这个码。**它没有按归属过滤**，所以只给管理员
   // （§4.4 的下载预览）；学生 / 导师只上传，不拿列表权限。
   { code: 'file:list', name: '查看与下载文件' },
+  // 手动触发 SSO 同步。只种码不绑角色：超管绕过权限检查，
+  // 其他账号要手动同步时由超管按需授权。
+  { code: 'sync:run', name: '手动触发同步' },
 ] as const;
 
 /**
@@ -513,11 +516,13 @@ interface DemoPersonSpec {
 }
 
 /**
- * 同步源里会有的人：三个导师（两个内校、一个外校）+ 一个学生。
+ * 同步源里会有的人：三个导师（两个内校、一个外校）+ 两个学生。
  *
  * `T002` 是外校导师——`affiliateOrg` / `socialRoles` 只有外校能填（R49），
  * 没有外校样本，那两个字段的正常路径就测不到。
  * `T003` 在外国语学院——外院的人，用来测数据范围的负断言。
+ * 两个学生是**故意的**：预约、评价、成果里凡是有「本人 / 他人」区分的断言，
+ * 只有一个学生就只能测到正路径；`S002` 用来测「别人的预约看不到」。
  */
 const DEMO_PEOPLE: readonly DemoPersonSpec[] = [
   {
@@ -544,6 +549,13 @@ const DEMO_PEOPLE: readonly DemoPersonSpec[] = [
   {
     login: 'S001',
     realName: '陈一鸣',
+    personType: 'student',
+    orgCode: 'CS-SE',
+    roles: ['student'],
+  },
+  {
+    login: 'S002',
+    realName: '赵晓雨',
     personType: 'student',
     orgCode: 'CS-SE',
     roles: ['student'],
@@ -674,6 +686,8 @@ async function ensureDemoUser(
         deptId,
         status: 1,
         isSuperAdmin: false,
+        // 外校导师不在 SSO 里，保持本地账号；其余演示人员按 SSO 账号处理
+        authSource: spec.personType === 'externalMentor' ? 'local' : 'sso',
         createdBy: SYSTEM_USER_ID,
         updatedBy: SYSTEM_USER_ID,
       },
@@ -1073,6 +1087,7 @@ async function main(): Promise<void> {
       deptId: dept.id,
       status: 1,
       isSuperAdmin: true,
+      authSource: 'local',
       createdBy: SYSTEM_USER_ID,
       updatedBy: SYSTEM_USER_ID,
     },

@@ -99,6 +99,7 @@ export async function seedSuperAdmin(
       deptId: dept.id,
       status: 1,
       isSuperAdmin: true,
+      authSource: 'local',
       createdBy: 0n,
       updatedBy: 0n,
     },
@@ -118,6 +119,7 @@ export async function seedUser(
     deptId: bigint;
     isSuperAdmin?: boolean;
     status?: number;
+    authSource?: 'local' | 'sso';
   },
 ): Promise<SeededUser> {
   const password = options.password ?? 'Passw0rd!';
@@ -130,6 +132,7 @@ export async function seedUser(
       deptId: options.deptId,
       status: options.status ?? 1,
       isSuperAdmin: options.isSuperAdmin ?? false,
+      authSource: options.authSource ?? 'local',
       createdBy: 0n,
       updatedBy: 0n,
     },

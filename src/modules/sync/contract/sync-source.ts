@@ -27,7 +27,7 @@ export interface SyncPersonRow {
   /** 学号 / 工号，配行的自然键，也是 `SysUser.username` 与 `employeeNo` */
   login: string;
   realName: string;
-  personType: 'student' | 'internalMentor' | 'externalMentor';
+  personType: 'student' | 'internalMentor' | 'externalMentor' | 'teacher';
   /** 所属单位编码，必须能对上一条 `SyncOrgUnitRow.code` */
   orgUnitCode: string;
   major: string | null;

@@ -28,6 +28,7 @@ function sysUser(overrides: Partial<SysUser> = {}): SysUser {
     deptId: 1n,
     status: 1,
     isSuperAdmin: false,
+    authSource: 'local',
     lastLoginAt: null,
     createdAt: new Date('2026-10-14T00:00:00.000Z'),
     updatedAt: new Date('2026-10-14T00:00:00.000Z'),

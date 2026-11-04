@@ -42,6 +42,8 @@ model SysUser {
   deptId         BigInt    @map("dept_id") @db.UnsignedBigInt
   status         Int       @default(1) @db.TinyInt
   isSuperAdmin   Boolean   @default(false) @map("is_super_admin")
+  /// local = 本地账号（超管/管理员）；sso = 统一认证账号
+  authSource     String    @default("local") @map("auth_source") @db.VarChar(20)
   lastLoginAt    DateTime? @map("last_login_at") @db.DateTime(3)
 
   createdAt      DateTime  @default(now()) @map("created_at") @db.DateTime(3)
@@ -420,6 +422,8 @@ model SyncRun {
   finishedAt DateTime? @map("finished_at") @db.DateTime(3)
   /// 0 RUNNING | 1 OK | 2 PARTIAL | 3 FAILED
   status     Int       @db.TinyInt
+  /// incremental | full；历史行可空
+  mode       String?   @db.VarChar(20)
   /// 增量与全量都记 total
   total      Int       @default(0)
   okCount    Int       @default(0) @map("ok_count")
