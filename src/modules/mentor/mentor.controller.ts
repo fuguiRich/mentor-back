@@ -47,7 +47,7 @@ export class MentorController {
       '（GET 不做自动建行，读接口不许有写副作用）。' +
       '调用者不是导师（personType ∉ {internalMentor, externalMentor}，含学生）' +
       '返回 **403 / 10003**——学生永远不会有导师档案，给 404 会让人以为再试一次就有了。' +
-      'mentorType 不落列，由 SyncPerson.personType 推导（internalMentor→internal，' +
+      'mentorType 不落列，由 SyncPerson.personType 推导（internalMentor/teacher→internal，' +
       'externalMentor→external）。',
   })
   @ApiOkResponse({
@@ -68,7 +68,7 @@ export class MentorController {
     schema: {
       example: errExample(
         ErrorCode.FORBIDDEN,
-        '只有导师（internalMentor / externalMentor）有专业档案',
+        '只有导师（internalMentor / externalMentor / teacher）有专业档案',
       ),
     },
   })
@@ -114,7 +114,7 @@ export class MentorController {
     schema: {
       example: errExample(
         ErrorCode.FORBIDDEN,
-        '只有导师（internalMentor / externalMentor）有专业档案',
+        '只有导师（internalMentor / externalMentor / teacher）有专业档案',
       ),
     },
   })

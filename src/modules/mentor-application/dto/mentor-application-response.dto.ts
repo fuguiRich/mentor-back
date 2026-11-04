@@ -46,7 +46,7 @@ export type MentorApplicationStatus =
  * 已提交申请的 `snapshot`。
  *
  * `mentorType` **不落列**：由 `SyncPerson.personType` 推导
- * （internalMentor→internal，externalMentor→external，`deriveMentorType` 的口径）。
+ * （internalMentor/teacher→internal，externalMentor→external，`deriveMentorType` 的口径）。
  * `affiliateOrg` / `socialRoles` 校内导师恒 `null`（R49，档案行里就已是 NULL）。
  *
  * 落成 `class` 而不是 brief 草图里的 `type`：DTO-03（DTO 必须是 class，禁止

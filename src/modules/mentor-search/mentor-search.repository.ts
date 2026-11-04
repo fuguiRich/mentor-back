@@ -53,8 +53,9 @@ export function buildMentorSearchWhere(
     ...(params.name === undefined
       ? []
       : [{ person: { realName: { contains: params.name } } }]),
-    // 类型**显式相等**，不用补集：`!= 'externalMentor'` 会把 student / 其他
-    // 人员类型也算成 internal，人员类型一扩就错。
+    // 类型**显式枚举**，不用补集：`!= 'externalMentor'` 会把 student / 其他
+    // 人员类型也算成 internal，人员类型一扩就错。`teacher` 是同步源来的教师，
+    // 与 `internalMentor` 同属校内。
     ...(params.mentorType === undefined
       ? []
       : [
@@ -63,7 +64,7 @@ export function buildMentorSearchWhere(
               personType:
                 params.mentorType === 'external'
                   ? 'externalMentor'
-                  : 'internalMentor',
+                  : { in: ['internalMentor', 'teacher'] },
             },
           },
         ]),

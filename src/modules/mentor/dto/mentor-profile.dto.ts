@@ -50,7 +50,7 @@ export class MentorProfileResponseDto {
   @ApiProperty({
     description:
       '导师类型：internal 校内 / external 校外。**不落列**——由 SyncPerson.personType ' +
-      '推导（internalMentor→internal，externalMentor→external），冗余一份就会跟同步源漂移',
+      '推导（internalMentor/teacher→internal，externalMentor→external），冗余一份就会跟同步源漂移',
     enum: ['internal', 'external'],
     example: 'internal',
   })

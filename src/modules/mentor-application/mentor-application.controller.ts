@@ -108,7 +108,7 @@ export class MentorApplicationController {
     schema: {
       example: errExample(
         ErrorCode.FORBIDDEN,
-        '只有导师（internalMentor / externalMentor）有专业档案',
+        '只有导师（internalMentor / externalMentor / teacher）有专业档案',
       ),
     },
   })
@@ -172,7 +172,7 @@ export class MentorApplicationController {
     schema: {
       example: errExample(
         ErrorCode.FORBIDDEN,
-        '只有导师（internalMentor / externalMentor）有专业档案',
+        '只有导师（internalMentor / externalMentor / teacher）有专业档案',
       ),
     },
   })

@@ -1,4 +1,5 @@
 import type { MentorProfile } from '@prisma/client';
+import { deriveMentorType as derive } from '../../common/constants/person-type';
 import {
   MentorProfileResponseDto,
   type MentorProfileStatus,
@@ -8,11 +9,11 @@ import {
  * `SyncPerson.personType` → 响应的 `mentorType`。
  *
  * **不落列**（schema 注释钉的）：冗余一份就会跟同步源漂移。学生走不到这里
- * ——身份门在 Service 先拦（403），但这里仍按「非 externalMentor 即 internal」
- * 收窄成两值，好让类型是字面量联合而不是 string。
+ * ——身份门在 Service 先拦（403）。判定口径统一在 `person-type.ts`：
+ * `teacher` 与 `internalMentor` 都算校内。
  */
 export function deriveMentorType(personType: string): 'internal' | 'external' {
-  return personType === 'externalMentor' ? 'external' : 'internal';
+  return derive(personType);
 }
 
 /** JSON 列的兜底读：坏数据不该把 GET 打成 500，落成 [] 即可（写口只有一处，形状已校验） */

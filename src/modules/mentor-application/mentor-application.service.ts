@@ -1,6 +1,7 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import type { SyncPerson } from '@prisma/client';
 import { ErrorCode } from '../../common/constants/error-code';
+import { isMentorPersonType } from '../../common/constants/person-type';
 import type { DataScopeFilter } from '../../common/constants/data-scope';
 import {
   currentDataScopeCeiling,
@@ -389,11 +390,7 @@ export class MentorApplicationService {
         ? null
         : await this.repository.findPersonByLogin(user.username);
 
-    if (
-      person === null ||
-      (person.personType !== 'internalMentor' &&
-        person.personType !== 'externalMentor')
-    ) {
+    if (person === null || !isMentorPersonType(person.personType)) {
       throw new BusinessException(
         ErrorCode.FORBIDDEN,
         '只有导师（internalMentor / externalMentor）有专业档案',

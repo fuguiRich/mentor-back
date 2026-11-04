@@ -119,13 +119,15 @@ describe('buildMentorSearchWhere', () => {
     expect(clauses).toContainEqual({ person: { orgUnit: { deptId: 2n } } });
   });
 
-  it('mentorType=external → externalMentor；internal → internalMentor（显式相等，不是补集）', () => {
+  it('mentorType=external → externalMentor；internal → internalMentor + teacher（显式枚举，不是补集）', () => {
     expect(
       andClauses(buildMentorSearchWhere({ mentorType: 'external' })),
     ).toContainEqual({ person: { personType: 'externalMentor' } });
     expect(
       andClauses(buildMentorSearchWhere({ mentorType: 'internal' })),
-    ).toContainEqual({ person: { personType: 'internalMentor' } });
+    ).toContainEqual({
+      person: { personType: { in: ['internalMentor', 'teacher'] } },
+    });
     // 补集写法会把 student / 其他人员类型也算成 internal——钉死不许回退
     expect(
       andClauses(buildMentorSearchWhere({ mentorType: 'internal' })),

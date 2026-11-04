@@ -102,7 +102,7 @@ export class MentorMaterialController {
         [ErrorCode.FORBIDDEN, '无权限'],
         [
           ErrorCode.FORBIDDEN,
-          '只有导师（internalMentor / externalMentor）能管理佐证材料',
+          '只有导师（internalMentor / externalMentor / teacher）能管理佐证材料',
         ],
       ).map((example) => ({ example })),
     },
@@ -194,7 +194,7 @@ export class MentorMaterialController {
         [ErrorCode.FORBIDDEN, '无权限'],
         [
           ErrorCode.FORBIDDEN,
-          '只有导师（internalMentor / externalMentor）能管理佐证材料',
+          '只有导师（internalMentor / externalMentor / teacher）能管理佐证材料',
         ],
       ).map((example) => ({ example })),
     },

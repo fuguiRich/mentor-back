@@ -34,22 +34,27 @@ export class StatsRepository {
     });
   }
 
-  /** 生效档案里按 `personType` 计数（`internalMentor` / `externalMentor`） */
+  /**
+   * 生效档案里按 `personType` 集合计数。
+   *
+   * `teacher` 与 `internalMentor` 同属校内，所以调用方传数组而不是单值。
+   * 用 `AND` 把 `base` 与类型集合求交：`base.person` 里可能已经有部门范围，
+   * 直接展开 `person` 会把它整个覆盖掉——学院管理员会看到全校的校内导师数。
+   */
   countApprovedByPersonType(
     base: Prisma.MentorProfileWhereInput,
-    personType: string,
+    personTypes: readonly string[],
   ): Promise<number> {
-    const person: Prisma.SyncPersonWhereInput = { ...base.person };
-    // 调用方已经按 `mentorType` 限定过类型时，**不要覆盖**：
-    // 问「校外筛选下有多少校内导师」的答案是 0，不是「全部校内导师」。
-    if (person.personType !== undefined && person.personType !== personType) {
-      return Promise.resolve(0);
-    }
     return this.prisma.client.mentorProfile.count({
-      // **合并**而不是覆盖 `base.person`：base 里的部门范围就在这个对象上，
-      // 直接写 `person: { personType }` 会把部门过滤整个丢掉——
-      // 学院管理员会看到全校的校内导师数（而 total 仍是本院的）。
-      where: { ...base, status: 2, person: { ...person, personType } },
+      where: {
+        AND: [
+          base,
+          {
+            status: 2,
+            person: { personType: { in: [...personTypes] } },
+          },
+        ],
+      },
     });
   }
 

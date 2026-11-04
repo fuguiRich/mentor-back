@@ -179,8 +179,11 @@ export class StatsService {
     const byStatusMap = await this.repository.countByStatus(base);
     const total = byStatusMap.get(STATUS_APPROVED) ?? 0;
     const [internal, external, active, approvedIds] = await Promise.all([
-      this.repository.countApprovedByPersonType(base, 'internalMentor'),
-      this.repository.countApprovedByPersonType(base, 'externalMentor'),
+      this.repository.countApprovedByPersonType(base, [
+        'internalMentor',
+        'teacher',
+      ]),
+      this.repository.countApprovedByPersonType(base, ['externalMentor']),
       this.repository.countActive(base, from, to),
       this.repository.findApprovedIds(base),
     ]);
@@ -1060,7 +1063,9 @@ export class StatsService {
     const person: Prisma.SyncPersonWhereInput = {};
     if (query.mentorType !== undefined) {
       person.personType =
-        query.mentorType === 'internal' ? 'internalMentor' : 'externalMentor';
+        query.mentorType === 'internal'
+          ? { in: ['internalMentor', 'teacher'] }
+          : 'externalMentor';
     }
 
     const user = await this.users.findById(caller.userId);
