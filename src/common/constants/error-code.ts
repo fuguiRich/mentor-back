@@ -40,6 +40,12 @@ export enum ErrorCode {
   AUTH_PASSWORD_MISMATCH = 20105,
   AUTH_SSO_STATE_INVALID = 20106,
   AUTH_SSO_USER_UNKNOWN = 20107,
+  AUTH_SSO_UNAVAILABLE = 20108,
+  AUTH_SSO_CONFIG_INVALID = 20109,
+  AUTH_SSO_RATE_LIMITED = 20110,
+  AUTH_SSO_RESPONSE_INVALID = 20111,
+  AUTH_SSO_PASSWORD_MANAGED = 20112,
+  AUTH_SSO_PROVISION_FAILED = 20113,
 
   // 用户模块 21000-21999
   USER_NOT_FOUND = 21101,
@@ -244,6 +250,18 @@ export const ERROR_CODE_DESCRIPTIONS: Record<ErrorCode, string> = {
   [ErrorCode.AUTH_SSO_STATE_INVALID]: '统一认证未通过，请重新发起登录',
   [ErrorCode.AUTH_SSO_USER_UNKNOWN]:
     '统一认证已通过，但本系统没有对应账号，请联系管理员',
+  [ErrorCode.AUTH_SSO_UNAVAILABLE]:
+    '统一认证暂不可用，请稍后重试',
+  [ErrorCode.AUTH_SSO_CONFIG_INVALID]:
+    '统一认证配置异常，请联系管理员',
+  [ErrorCode.AUTH_SSO_RATE_LIMITED]:
+    '统一认证请求过于频繁，请稍后重试',
+  [ErrorCode.AUTH_SSO_RESPONSE_INVALID]:
+    '统一认证返回异常，请稍后重试',
+  [ErrorCode.AUTH_SSO_PASSWORD_MANAGED]:
+    '统一认证账号请在统一认证平台修改密码',
+  [ErrorCode.AUTH_SSO_PROVISION_FAILED]:
+    '统一认证已通过，但本地账号创建失败，请联系管理员',
   [ErrorCode.USER_NOT_FOUND]: '用户不存在',
   [ErrorCode.USER_NAME_TAKEN]: '用户名已存在',
   [ErrorCode.USER_EMPLOYEE_NO_TAKEN]: '工号已存在',

@@ -16,6 +16,8 @@ import type { AppConfig } from '../../config/configuration';
 import { MockSsoProvider } from './sso/mock-sso.provider';
 import { OidcSsoProvider } from './sso/oidc-sso.provider';
 import { SSO_PROVIDER, type SsoProvider } from './sso/sso.provider';
+import { SsoApiLoginClient } from './sso/sso-api-login.client';
+import { SsoRateLimiter } from './sso/sso-rate-limiter.service';
 
 /**
  * 全局默认拒绝的**唯一**注册点（spec 第 7 节「守卫全局注册，用 @Public() 显式开口子」）。
@@ -51,6 +53,8 @@ import { SSO_PROVIDER, type SsoProvider } from './sso/sso.provider';
     AuthService,
     TokenService,
     PermissionCacheService,
+    SsoRateLimiter,
+    SsoApiLoginClient,
     {
       provide: SSO_PROVIDER,
       useFactory: (config: ConfigService<AppConfig, true>): SsoProvider => {
@@ -68,6 +72,11 @@ import { SSO_PROVIDER, type SsoProvider } from './sso/sso.provider';
     { provide: APP_GUARD, useClass: RateLimitGuard },
   ],
   controllers: [AuthController],
-  exports: [AuthService, TokenService, PermissionCacheService],
+  exports: [
+    AuthService,
+    TokenService,
+    PermissionCacheService,
+    SsoApiLoginClient,
+  ],
 })
 export class AuthModule {}
