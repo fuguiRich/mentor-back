@@ -66,6 +66,85 @@ export function validateEnv(
     );
   }
 
+  // SSO 登录/同步的布尔开关。拼错的值最坏结果是「以为关了其实开着」，
+  // 同 SWAGGER_ENABLED，不猜，让进程起不来。
+  for (const key of [
+    'SSO_LOGIN_ENABLED',
+    'SSO_SYNC_ENABLED',
+    'SSO_FALLBACK_ENABLED',
+    'SSO_FALLBACK_ON_5XX',
+  ] as const) {
+    const value = raw[key];
+    if (value === undefined || value === '') {
+      continue;
+    }
+    const normalized =
+      typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (!['1', '0', 'true', 'false'].includes(normalized)) {
+      problems.push(`${key} 只能是 1 / 0 / true / false：${String(value)}`);
+    }
+  }
+
+  const ssoLoginEnabled =
+    raw.SSO_LOGIN_ENABLED === '1' || raw.SSO_LOGIN_ENABLED === 'true';
+  const ssoSyncEnabled =
+    raw.SSO_SYNC_ENABLED === '1' || raw.SSO_SYNC_ENABLED === 'true';
+
+  if (ssoLoginEnabled || ssoSyncEnabled) {
+    for (const key of [
+      'SSO_BASE_URL',
+      'SSO_APP_ID',
+      'SSO_APP_SECRET',
+    ] as const) {
+      const value = raw[key];
+      if (typeof value !== 'string' || value.trim() === '') {
+        problems.push(
+          `SSO_LOGIN_ENABLED / SSO_SYNC_ENABLED 打开时 ${key} 必须配置`,
+        );
+      }
+    }
+  }
+
+  const appSecretMode = raw.SSO_APP_SECRET_MODE;
+  if (
+    appSecretMode !== undefined &&
+    appSecretMode !== '' &&
+    appSecretMode !== 'rsa' &&
+    appSecretMode !== 'plain'
+  ) {
+    problems.push(
+      `SSO_APP_SECRET_MODE 只能是 rsa 或 plain：${String(appSecretMode)}`,
+    );
+  }
+
+  for (const key of [
+    'SSO_API_LOGIN_TIMEOUT_MS',
+    'SSO_RATE_LIMIT_PER_MINUTE',
+    'SSO_SYNC_INTERVAL_SECONDS',
+    'SSO_SYNC_FULL_INTERVAL_SECONDS',
+    'SSO_SYNC_PAGE_SIZE',
+  ] as const) {
+    const value = raw[key];
+    if (value === undefined || value === '') {
+      continue;
+    }
+    const amount = Number(value);
+    if (!Number.isInteger(amount) || amount <= 0) {
+      problems.push(`${key} 必须是正整数：${String(value)}`);
+    }
+  }
+
+  const openApiPrefix = raw.SSO_OPENAPI_PREFIX;
+  if (
+    typeof openApiPrefix === 'string' &&
+    openApiPrefix !== '' &&
+    !openApiPrefix.startsWith('/')
+  ) {
+    problems.push(
+      `SSO_OPENAPI_PREFIX 必须为空或以 / 开头：${openApiPrefix}`,
+    );
+  }
+
   const corsRaw = raw.CORS_ORIGINS;
   const corsOrigins = (typeof corsRaw === 'string' ? corsRaw : '')
     .split(',')

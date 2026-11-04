@@ -91,4 +91,24 @@ describe('validateEnv', () => {
       /SWAGGER_ENABLED/,
     );
   });
+
+  it('SSO_LOGIN_ENABLED=1 但缺 SSO_APP_ID → 抛错', () => {
+    expect(() =>
+      validateEnv({
+        ...VALID_ENV,
+        SSO_LOGIN_ENABLED: '1',
+        SSO_BASE_URL: 'https://sso.example.edu',
+        SSO_APP_SECRET: 'secret',
+      }),
+    ).toThrow(/SSO_APP_ID/);
+  });
+
+  it('SSO_FALLBACK_ON_5XX 不是布尔值 → 抛错', () => {
+    expect(() =>
+      validateEnv({
+        ...VALID_ENV,
+        SSO_FALLBACK_ON_5XX: 'yes',
+      }),
+    ).toThrow(/SSO_FALLBACK_ON_5XX/);
+  });
 });

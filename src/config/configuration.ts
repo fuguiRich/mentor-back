@@ -34,6 +34,28 @@ export interface AppConfig {
     employeeNoClaim: string;
     /** state 的存活时间（秒）。过期/已用过的 state 一律认作认证失败 */
     stateTtlSeconds: number;
+    /** 是否启用后端代理 api-login（SSO-first 登录） */
+    loginEnabled: boolean;
+    /** SSO 基地址，如 https://sso.csmu.edu.cn */
+    baseUrl: string;
+    appId: string;
+    appSecret: string;
+    /** clientSecret 传输方式：RSA 加密（推荐）或明文 appKey */
+    appSecretMode: 'rsa' | 'plain';
+    apiLoginPath: string;
+    publicKeyPath: string;
+    apiLoginTimeoutMs: number;
+    /** 本地 Redis 令牌桶，默认 55 次/分钟，低于 SSO 单应用 60 次/分钟 */
+    rateLimitPerMinute: number;
+    fallbackEnabled: boolean;
+    fallbackOn5xx: boolean;
+    caCertPath: string;
+    syncEnabled: boolean;
+    openApiPrefix: string;
+    syncIntervalSeconds: number;
+    syncFullIntervalSeconds: number;
+    syncPageSize: number;
+    syncDefaultDeptCode: string;
   };
   cors: {
     /** 允许跨域的来源白名单。空数组 = 拒绝一切跨域（fail-closed） */
@@ -79,6 +101,16 @@ function parseSwaggerEnabled(env: NodeJS.ProcessEnv): boolean {
     return env.NODE_ENV !== 'production';
   }
   return raw === '1' || raw === 'true';
+}
+
+/**
+ * 通用布尔开关。空串与不配同路（走默认值），`1` / `true` 为真，其余为假。
+ * 拼错的值由 `env.validation.ts` 在启动时挡掉，这里只管「配了就用」。
+ */
+function parseBool(raw: string | undefined, fallback: boolean): boolean {
+  const value = raw?.trim().toLowerCase();
+  if (value === undefined || value === '') return fallback;
+  return value === '1' || value === 'true';
 }
 
 /**
@@ -133,6 +165,26 @@ export default (): AppConfig => {
       stateTtlSeconds: Number(
         env.SSO_STATE_TTL_SECONDS ?? DEFAULT_SSO_STATE_TTL_SECONDS,
       ),
+      loginEnabled: parseBool(env.SSO_LOGIN_ENABLED, false),
+      baseUrl: env.SSO_BASE_URL ?? '',
+      appId: env.SSO_APP_ID ?? '',
+      appSecret: env.SSO_APP_SECRET ?? '',
+      appSecretMode: (env.SSO_APP_SECRET_MODE ?? 'rsa') as 'rsa' | 'plain',
+      apiLoginPath: env.SSO_API_LOGIN_PATH ?? '/sso/login/api-login',
+      publicKeyPath: env.SSO_PUBLIC_KEY_PATH ?? '/sso/app/public-key',
+      apiLoginTimeoutMs: Number(env.SSO_API_LOGIN_TIMEOUT_MS || 5000),
+      rateLimitPerMinute: Number(env.SSO_RATE_LIMIT_PER_MINUTE || 55),
+      fallbackEnabled: parseBool(env.SSO_FALLBACK_ENABLED, true),
+      fallbackOn5xx: parseBool(env.SSO_FALLBACK_ON_5XX, false),
+      caCertPath: env.SSO_CA_CERT_PATH ?? '',
+      syncEnabled: parseBool(env.SSO_SYNC_ENABLED, false),
+      openApiPrefix: env.SSO_OPENAPI_PREFIX ?? '/api',
+      syncIntervalSeconds: Number(env.SSO_SYNC_INTERVAL_SECONDS || 21600),
+      syncFullIntervalSeconds: Number(
+        env.SSO_SYNC_FULL_INTERVAL_SECONDS || 604800,
+      ),
+      syncPageSize: Number(env.SSO_SYNC_PAGE_SIZE || 200),
+      syncDefaultDeptCode: env.SSO_SYNC_DEFAULT_DEPT_CODE ?? '',
     },
     cors: {
       origins: (env.CORS_ORIGINS ?? '')

@@ -61,7 +61,11 @@ export async function clearModuleTables(prisma: PrismaService): Promise<void> {
  * 直接失效（e2e 是 maxWorkers:1 串行跑的，键就是会一路留到下一套件）。
  */
 export async function clearRedisKeys(redis: RedisService): Promise<void> {
-  const prefixes = [redisKeys.authPrefix, redisKeys.rateLimitPrefix];
+  const prefixes = [
+    redisKeys.authPrefix,
+    redisKeys.rateLimitPrefix,
+    redisKeys.ssoPrefix,
+  ];
   for (const prefix of prefixes) {
     const keys = await redis.client.keys(`${prefix}*`);
     if (keys.length > 0) {

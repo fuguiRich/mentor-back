@@ -89,6 +89,72 @@ describe('configuration swagger.enabled', () => {
   });
 });
 
+describe('configuration sso login/sync', () => {
+  const KEYS = [
+    'SSO_LOGIN_ENABLED',
+    'SSO_SYNC_ENABLED',
+    'SSO_BASE_URL',
+    'SSO_APP_ID',
+    'SSO_APP_SECRET',
+  ] as const;
+
+  /** 跑完无条件还原，断言失败也不污染后续用例 */
+  function withEnv(
+    overrides: Partial<Record<(typeof KEYS)[number], string>>,
+    run: () => void,
+  ): void {
+    const previous = new Map<string, string | undefined>();
+    for (const key of KEYS) {
+      previous.set(key, process.env[key]);
+      delete process.env[key];
+    }
+    for (const [key, value] of Object.entries(overrides)) {
+      if (value !== undefined) {
+        process.env[key] = value;
+      }
+    }
+
+    try {
+      run();
+    } finally {
+      for (const key of KEYS) {
+        const value = previous.get(key);
+        if (value === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
+      }
+    }
+  }
+
+  it('SSO_LOGIN_ENABLED / SSO_SYNC_ENABLED 默认 false', () => {
+    withEnv({}, () => {
+      const cfg = configuration();
+      expect(cfg.sso.loginEnabled).toBe(false);
+      expect(cfg.sso.syncEnabled).toBe(false);
+    });
+  });
+
+  it('SSO_LOGIN_ENABLED=true 时读取 baseUrl/appId/appSecret', () => {
+    withEnv(
+      {
+        SSO_LOGIN_ENABLED: '1',
+        SSO_BASE_URL: 'https://sso.example.edu',
+        SSO_APP_ID: 'app_x',
+        SSO_APP_SECRET: 'secret',
+      },
+      () => {
+        const cfg = configuration();
+        expect(cfg.sso.loginEnabled).toBe(true);
+        expect(cfg.sso.baseUrl).toBe('https://sso.example.edu');
+        expect(cfg.sso.appId).toBe('app_x');
+        expect(cfg.sso.appSecret).toBe('secret');
+      },
+    );
+  });
+});
+
 describe('configuration appointmentExpiry', () => {
   const KEYS = [
     'APPOINTMENT_EXPIRY_SCAN_ENABLED',

@@ -14,6 +14,11 @@ process.env.APPOINTMENT_EXPIRY_SCAN_ENABLED ??= '0';
 // 批次二的认证用例还会往 Redis 写令牌键。
 config({ path: '.env.test.local', quiet: true });
 
+// SSO 登录/同步默认关闭：现有 e2e 都按本地密码登录，不能在后台去调真实 SSO。
+// 需要测 SSO 的套件自己在 beforeAll 里显式打开并恢复。
+process.env.SSO_LOGIN_ENABLED ??= '0';
+process.env.SSO_SYNC_ENABLED ??= '0';
+
 // e2e 专用密钥兜底（R17）。用 `??=` 而不是 `=`：用户在 .env.test.local 里配了就用配的。
 // 不去改用户的 .env 文件；生产路径不受影响——validateEnv 仍要求 JWT_SECRET 必须存在且够长。
 process.env.JWT_SECRET ??= 'e2e-only-secret-not-used-in-production-0123456789';

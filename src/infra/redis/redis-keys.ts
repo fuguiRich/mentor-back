@@ -7,11 +7,13 @@
  */
 const AUTH_PREFIX = 'auth';
 const RATE_LIMIT_PREFIX = 'rl';
+const SSO_PREFIX = 'sso';
 
 export const redisKeys = {
   /** 前缀，供 e2e 清库（只删本系统写的键，不用 FLUSHDB 打别人） */
   authPrefix: `${AUTH_PREFIX}:`,
   rateLimitPrefix: `${RATE_LIMIT_PREFIX}:`,
+  ssoPrefix: `${SSO_PREFIX}:`,
 
   auth: {
     /**
@@ -48,5 +50,12 @@ export const redisKeys = {
      */
     window: (identity: string, endpoint: string): string =>
       `${RATE_LIMIT_PREFIX}:${identity}:${endpoint}`,
+  },
+
+  sso: {
+    /** SSO api-login 的应用级令牌桶，多实例共享 */
+    rateLimit: (appId: string): string => `${SSO_PREFIX}:rate:${appId}`,
+    /** 定时同步的分布式锁，防多副本并发跑同一批数据 */
+    syncLock: (): string => `${SSO_PREFIX}:sync:lock`,
   },
 } as const;
