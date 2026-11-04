@@ -8,14 +8,15 @@ import { SyncService } from './sync.service';
 import { SsoUserProvisioner } from './sso/sso-user-provisioner';
 import { SsoOpenApiClient } from './sso/sso-open-api.client';
 import { SsoSyncSource } from './sso/sso-sync.source';
+import { SsoSyncScheduler } from './sso/sso-sync.scheduler';
+import { SyncController } from './sync.controller';
 
 /**
- * 同步模块。**不带 controller**：同步任务本期没有 HTTP 触发入口，
- * 触发方式（定时任务 / 运维接口）是后面的事，现在只有 `SyncService.runOnce()`。
- *
- * `PrismaService` 不用在这里 import——`PrismaModule` 是 `@Global()` 的。
+ * 同步模块。定时器（`SsoSyncScheduler`）与手动触发入口（`SyncController`）
+ * 都在这里；`PrismaService` 不用 import——`PrismaModule` 是 `@Global()` 的。
  */
 @Module({
+  controllers: [SyncController],
   providers: [
     SyncRunRepository,
     SyncOrgRepository,
@@ -30,6 +31,7 @@ import { SsoSyncSource } from './sso/sso-sync.source';
       inject: [ConfigService],
     },
     SsoSyncSource,
+    SsoSyncScheduler,
   ],
   exports: [SyncService, SsoUserProvisioner, SsoOpenApiClient, SsoSyncSource],
 })
