@@ -56,6 +56,7 @@ function userDetail(
     deptName: '总公司',
     status: 1,
     isSuperAdmin: false,
+    authSource: 'local',
     lastLoginAt: null,
     createdAt: '2026-10-14T00:00:00.000Z',
     updatedAt: '2026-10-14T00:00:00.000Z',
@@ -79,6 +80,7 @@ function userResponse(
     deptName: '总公司',
     status: 1,
     isSuperAdmin: false,
+    authSource: 'local',
     lastLoginAt: null,
     createdAt: '2026-10-14T00:00:00.000Z',
     updatedAt: '2026-10-14T00:00:00.000Z',
@@ -340,6 +342,23 @@ describe('AuthService 收尾四接口（profile / 改密 / 统一认证）', () 
         response: { code: ErrorCode.AUTH_PASSWORD_MISMATCH },
       });
       expect(stubs.changeOwnPassword).not.toHaveBeenCalled();
+    });
+
+    it('SSO 账号改密 → 403 / 20112', async () => {
+      const { service } = buildService({
+        findById: jest
+          .fn()
+          .mockResolvedValue(sysUser({ authSource: 'sso' })),
+      });
+
+      await expect(
+        service.changePassword(1n, {
+          oldPassword: OLD_PASSWORD,
+          newPassword: NEW_PASSWORD,
+        }),
+      ).rejects.toMatchObject({
+        response: { code: ErrorCode.AUTH_SSO_PASSWORD_MANAGED },
+      });
     });
 
     it('5. 成功：changeOwnPassword 收到新密码的哈希，返回值透传', async () => {

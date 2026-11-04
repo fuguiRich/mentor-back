@@ -18,6 +18,7 @@ export function toUserResponse(entity: UserWithDeptName): UserResponseDto {
     deptName: entity.dept.name,
     status: entity.status,
     isSuperAdmin: entity.isSuperAdmin,
+    authSource: entity.authSource as 'local' | 'sso',
     lastLoginAt: entity.lastLoginAt?.toISOString() ?? null,
     createdAt: entity.createdAt.toISOString(),
     updatedAt: entity.updatedAt.toISOString(),

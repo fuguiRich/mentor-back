@@ -231,6 +231,42 @@ describe('SSO 登录（api-login 优先 + 本地回退）(e2e)', () => {
     expect(bound).not.toBeNull();
   });
 
+  it('SSO 账号 PUT /auth/password → 403 / 20112', async () => {
+    const login = await request(app.getHttpServer() as Server)
+      .post('/auth/login')
+      .send({ username: 'T950', password: 'Passw0rd!' })
+      .expect(200);
+    const token = (login.body as ResponseEnvelope<AuthTokensResponseDto>).data
+      .accessToken;
+
+    const response = await authedAgent(app, token)
+      .put('/auth/password')
+      .send({ oldPassword: 'Passw0rd!', newPassword: 'NewPassw0rd!' })
+      .expect(403);
+
+    expect((response.body as ResponseEnvelope<null>).code).toBe(
+      ErrorCode.AUTH_SSO_PASSWORD_MANAGED,
+    );
+  });
+
+  it('GET /auth/profile 返回 authSource=sso', async () => {
+    const login = await request(app.getHttpServer() as Server)
+      .post('/auth/login')
+      .send({ username: 'T950', password: 'Passw0rd!' })
+      .expect(200);
+    const token = (login.body as ResponseEnvelope<AuthTokensResponseDto>).data
+      .accessToken;
+
+    const profile = await authedAgent(app, token)
+      .get('/auth/profile')
+      .expect(200);
+
+    expect(
+      (profile.body as ResponseEnvelope<{ user: { authSource: string } }>).data
+        .user.authSource,
+    ).toBe('sso');
+  });
+
   it('SSO 密码错误 → 401 / 20101，不回退、不建号', async () => {
     ssoMode.kind = 'credentials';
 

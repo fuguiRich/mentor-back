@@ -416,6 +416,14 @@ export class AuthService {
       throw this.sessionNoLongerValid();
     }
 
+    if (user.authSource === 'sso') {
+      throw new BusinessException(
+        ErrorCode.AUTH_SSO_PASSWORD_MANAGED,
+        '统一认证账号请在统一认证平台修改密码',
+        HttpStatus.FORBIDDEN,
+      );
+    }
+
     if (!compareSync(dto.oldPassword, user.password)) {
       throw this.passwordMismatch();
     }

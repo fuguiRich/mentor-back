@@ -46,6 +46,14 @@ export class UserResponseDto {
   isSuperAdmin!: boolean;
 
   @ApiProperty({
+    description:
+      '登录来源：local = 本地账号（超管/管理员）；sso = 统一认证账号。前端据此隐藏本地改密入口',
+    enum: ['local', 'sso'],
+    example: 'local',
+  })
+  authSource!: 'local' | 'sso';
+
+  @ApiProperty({
     type: String,
     description: '最后登录时间（UTC，ISO 8601）',
     example: '2026-10-14T03:00:00.000Z',
