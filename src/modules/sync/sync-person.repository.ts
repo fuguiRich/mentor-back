@@ -12,7 +12,8 @@ export interface SyncPersonContent {
   className: string | null;
   mobile: string | null;
   syncedAt: Date;
-  syncRunId: bigint;
+  /** 登录自动建号没有同步流水，允许 null */
+  syncRunId: bigint | null;
 }
 
 /**

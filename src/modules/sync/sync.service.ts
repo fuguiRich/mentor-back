@@ -454,6 +454,8 @@ export class SyncService {
       realName: row.realName,
       mobile: row.mobile,
       deptId,
+      // 同步源来的人都是 SSO 账号；管理员手工建号走 UserRepository.createWithRoles
+      authSource: 'sso',
     };
     const roleCode = PERSON_TYPE_ROLE_CODE[row.personType];
     const roleId = await this.projection.findRoleIdByCode(roleCode);

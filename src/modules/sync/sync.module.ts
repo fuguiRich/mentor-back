@@ -4,6 +4,7 @@ import { SyncOrgRepository } from './sync-org.repository';
 import { SyncPersonRepository } from './sync-person.repository';
 import { SyncRunRepository } from './sync-run.repository';
 import { SyncService } from './sync.service';
+import { SsoUserProvisioner } from './sso/sso-user-provisioner';
 
 /**
  * 同步模块。**不带 controller**：同步任务本期没有 HTTP 触发入口，
@@ -18,7 +19,8 @@ import { SyncService } from './sync.service';
     SyncPersonRepository,
     ProjectionWriter,
     SyncService,
+    SsoUserProvisioner,
   ],
-  exports: [SyncService],
+  exports: [SyncService, SsoUserProvisioner],
 })
 export class SyncModule {}

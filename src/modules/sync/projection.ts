@@ -5,6 +5,7 @@ import { randomBytes } from 'node:crypto';
 import { BCRYPT_ROUNDS } from '../../common/constants/auth.constants';
 import { currentActorId } from '../../common/context/request-context';
 import { PrismaService } from '../../infra/prisma/prisma.service';
+import { SessionStore } from '../../infra/redis/session-store.service';
 
 /** `SyncOrgUnit` → `SysDept` 的投影目标 */
 export interface DeptProjection {
@@ -22,6 +23,18 @@ export interface UserProjection {
   realName: string;
   mobile: string | null;
   deptId: bigint;
+  /** 人员来自同步源 → sso；管理员手工建号 → local */
+  authSource: 'local' | 'sso';
+}
+
+/** `updateUser` 只读这几个字段；用最小接口而不是 `SysUser`，provisioner 不必伪造整行 */
+export interface UserProjectionSource {
+  username: string;
+  employeeNo: string;
+  realName: string;
+  mobile: string | null;
+  deptId: bigint;
+  deletedAt: Date | null;
 }
 
 /**
@@ -44,7 +57,10 @@ export interface UserProjection {
  */
 @Injectable()
 export class ProjectionWriter {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly sessions: SessionStore,
+  ) {}
 
   // ---------- SysDept ----------
 
@@ -113,6 +129,27 @@ export class ProjectionWriter {
   }
 
   /**
+   * 根部门（`parentId IS NULL`）。SSO 登录自动建号要挂到它下面，
+   * 定时同步也要复用它，避免出现第二个根。
+   */
+  async findRootDept(): Promise<SysDept | null> {
+    return this.prisma.client.sysDept.findFirst({
+      where: { parentId: null, deletedAt: null },
+    });
+  }
+
+  /**
+   * 只写密码哈希，**不 revoke 会话**。登录成功时同步 SSO 密码用它；
+   * 本人改密 / 管理员重置仍走 `UserService` 那条会踢人的路径。
+   */
+  async updatePassword(id: bigint, passwordHash: string): Promise<void> {
+    await this.prisma.client.sysUser.update({
+      where: { id },
+      data: { password: passwordHash },
+    });
+  }
+
+  /**
    * 建号。**同步来的账号只走 SSO**：`password` 写一个没人知道的随机 bcrypt 哈希，
    * 本地密码登录必须走不通（`auth.service.ts` 会拿它去比对，永远比不上）。
    * 只在建号这一次写，之后再不动它——管理员重置的密码不该被同步冲掉。
@@ -127,7 +164,6 @@ export class ProjectionWriter {
         ),
         status: 1,
         isSuperAdmin: false,
-        // 类型占位：扩展会剥掉再按当前操作者重写。列 NOT NULL 且无默认值
         createdBy: 0n,
         updatedBy: 0n,
       },
@@ -140,7 +176,10 @@ export class ProjectionWriter {
    * 角色绑定，人员信息才是投影的），管理员说了算；唯一例外是源系统删人时
    * {@link disableUser} 把 `status` 收成 0，那是安全收缩，不反向。
    */
-  async updateUser(user: SysUser, desired: UserProjection): Promise<boolean> {
+  async updateUser(
+    user: UserProjectionSource,
+    desired: UserProjection,
+  ): Promise<boolean> {
     const revive = user.deletedAt !== null;
     const patch: Prisma.SysUserUpdateInput = {
       ...(user.username === desired.username
@@ -178,6 +217,8 @@ export class ProjectionWriter {
       where: { id: userId },
       data: { status: 0 },
     });
+    // 停用必须同时踢下线：只改 status 的话，已签发的 access 令牌还能用满 2 小时。
+    await this.sessions.revokeSessions(userId);
   }
 
   /** 这个账号现在绑了几个角色。**0 个才补默认角色**——有角色就不再碰（Ruling 24） */

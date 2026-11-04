@@ -54,7 +54,15 @@ import { SsoRateLimiter } from './sso/sso-rate-limiter.service';
     TokenService,
     PermissionCacheService,
     SsoRateLimiter,
-    SsoApiLoginClient,
+    {
+      provide: SsoApiLoginClient,
+      // 第三个参数是测试注入的 fetch；用工厂避开 Nest 把它当依赖解析
+      useFactory: (
+        config: ConfigService<AppConfig, true>,
+        rateLimiter: SsoRateLimiter,
+      ) => new SsoApiLoginClient(config, rateLimiter),
+      inject: [ConfigService, SsoRateLimiter],
+    },
     {
       provide: SSO_PROVIDER,
       useFactory: (config: ConfigService<AppConfig, true>): SsoProvider => {
