@@ -21,4 +21,29 @@ export class AuthTokensResponseDto {
     example: 7200,
   })
   expiresIn!: number;
+
+  @ApiProperty({
+    description:
+      '本次登录来源：sso = 统一认证；local = 本地账号；local-fallback = 统一认证网络不可达时回退本地密码。仅 POST /auth/login 返回',
+    enum: ['sso', 'local', 'local-fallback'],
+    required: false,
+  })
+  loginSource?: 'sso' | 'local' | 'local-fallback';
+
+  @ApiProperty({
+    description: '是否因统一认证不可用而回退本地密码。仅 POST /auth/login 返回',
+    example: false,
+    required: false,
+  })
+  ssoUnavailable?: boolean;
+
+  @ApiProperty({
+    type: Boolean,
+    description:
+      '统一认证返回的「是否仍在使用初始默认密码」。true 时前端应提示去统一认证平台改密，但不要拦截登录。仅 POST /auth/login 返回',
+    example: false,
+    nullable: true,
+    required: false,
+  })
+  isDefaultPwd?: boolean | null;
 }

@@ -44,13 +44,14 @@ export class AuthController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: '本地密码登录',
+    summary: '登录（统一认证优先，网络不可达时回退本地密码）',
     description:
-      '用用户名与密码换取一对令牌。响应里 expiresIn 是 access 令牌的剩余秒数，' +
-      '前端用它提前刷新，不必自己解 JWT。' +
-      '失败一律返回 401，且「用户名不存在」与「密码错误」的错误码与文案**完全相同**——' +
-      '任何差异都会变成一张用户名清单。连续 5 次失败会锁定 15 分钟，' +
-      '锁定期内即使密码正确也拒绝。',
+      '`SSO_LOGIN_ENABLED=true` 时：SSO 账号先调学校统一认证 api-login，成功后回写本地信息与密码；' +
+      '**只有网络层不可达（超时 / DNS / 连接失败 / TLS）才回退本地 bcrypt**，' +
+      'SSO 明确返回密码错误 / 锁定 / 应用禁用时一律不回退。' +
+      '本地账号（authSource=local，超管与管理员）始终走本地密码。' +
+      '响应里的 loginSource 告诉前端本次是 sso / local / local-fallback。' +
+      '连续 5 次本地密码失败会锁定 15 分钟；SSO 的锁定由统一认证自己负责。',
   })
   @ApiOkResponse({
     type: AuthTokensResponseDto,

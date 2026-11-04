@@ -13,6 +13,9 @@ import type { AppConfig } from '../../config/configuration';
 import { AuthService } from './auth.service';
 import type { TokenService } from './token.service';
 import type { SsoProvider } from './sso/sso.provider';
+import { SsoApiError } from './sso/sso-error';
+import type { SsoApiLoginClient } from './sso/sso-api-login.client';
+import type { SsoUserProvisioner } from '../sync/sso/sso-user-provisioner';
 
 const OLD_PASSWORD = 'OldPassw0rd!';
 const NEW_PASSWORD = 'NewPassw0rd!';
@@ -92,8 +95,10 @@ interface StubBag {
   findById: jest.Mock;
   findOne: jest.Mock;
   findByEmployeeNo: jest.Mock;
+  findByUsername: jest.Mock;
   recordLogin: jest.Mock;
   changeOwnPassword: jest.Mock;
+  syncSsoProfile: jest.Mock;
   // permissions
   findCodesByUserId: jest.Mock;
   findAllCodes: jest.Mock;
@@ -107,10 +112,16 @@ interface StubBag {
   storeRefreshToken: jest.Mock;
   saveSsoState: jest.Mock;
   consumeSsoState: jest.Mock;
+  getLoginFailures: jest.Mock;
+  registerLoginFailure: jest.Mock;
+  clearLoginFailures: jest.Mock;
   // config + sso
   configGet: jest.Mock;
   buildAuthorizeUrl: jest.Mock;
   exchangeTicket: jest.Mock;
+  ssoLogin: jest.Mock;
+  provisionUser: jest.Mock;
+  resolveDeptId: jest.Mock;
 }
 
 /**
@@ -124,8 +135,10 @@ function buildService(
     findById: jest.fn().mockResolvedValue(sysUser()),
     findOne: jest.fn().mockResolvedValue(userDetail()),
     findByEmployeeNo: jest.fn().mockResolvedValue(sysUser()),
+    findByUsername: jest.fn().mockResolvedValue(sysUser()),
     recordLogin: jest.fn().mockResolvedValue(undefined),
     changeOwnPassword: jest.fn().mockResolvedValue(userResponse()),
+    syncSsoProfile: jest.fn().mockResolvedValue(undefined),
 
     findCodesByUserId: jest.fn().mockResolvedValue(['user:list']),
     findAllCodes: jest.fn().mockResolvedValue(['user:list', 'role:list']),
@@ -148,11 +161,35 @@ function buildService(
     saveSsoState: jest.fn().mockResolvedValue(undefined),
     consumeSsoState: jest.fn().mockResolvedValue(true),
 
-    configGet: jest.fn().mockReturnValue(300),
+    getLoginFailures: jest.fn().mockResolvedValue(0),
+    registerLoginFailure: jest.fn().mockResolvedValue(1),
+    clearLoginFailures: jest.fn().mockResolvedValue(undefined),
+
+    configGet: jest.fn((key: string) => {
+      const map: Record<string, unknown> = {
+        'sso.stateTtlSeconds': 300,
+        'sso.loginEnabled': true,
+        'sso.fallbackEnabled': true,
+        'sso.fallbackOn5xx': false,
+      };
+      return map[key];
+    }),
     buildAuthorizeUrl: jest.fn(
       (state: string) => `https://auth.example.edu/login?state=${state}`,
     ),
     exchangeTicket: jest.fn().mockResolvedValue('E001'),
+    ssoLogin: jest.fn().mockResolvedValue({
+      user: {
+        userName: 'E001',
+        nickName: 'Alice',
+        userType: 'teacher',
+        deptId: '10',
+        deptName: '计算机学院',
+        isDefaultPwd: false,
+      },
+    }),
+    provisionUser: jest.fn().mockResolvedValue({ userId: 1n }),
+    resolveDeptId: jest.fn().mockResolvedValue(1n),
   };
 
   for (const [key, value] of Object.entries(overrides)) {
@@ -163,8 +200,10 @@ function buildService(
     findById: stubs.findById,
     findOne: stubs.findOne,
     findByEmployeeNo: stubs.findByEmployeeNo,
+    findByUsername: stubs.findByUsername,
     recordLogin: stubs.recordLogin,
     changeOwnPassword: stubs.changeOwnPassword,
+    syncSsoProfile: stubs.syncSsoProfile,
   } as unknown as UserService;
 
   const permissions = {
@@ -184,6 +223,9 @@ function buildService(
     storeRefreshToken: stubs.storeRefreshToken,
     saveSsoState: stubs.saveSsoState,
     consumeSsoState: stubs.consumeSsoState,
+    getLoginFailures: stubs.getLoginFailures,
+    registerLoginFailure: stubs.registerLoginFailure,
+    clearLoginFailures: stubs.clearLoginFailures,
   } as unknown as SessionStore;
 
   const config = {
@@ -196,8 +238,26 @@ function buildService(
     exchangeTicket: stubs.exchangeTicket,
   } as unknown as SsoProvider;
 
+  const ssoClient = {
+    login: stubs.ssoLogin,
+  } as unknown as SsoApiLoginClient;
+
+  const provisioner = {
+    ensureUser: stubs.provisionUser,
+    resolveDeptId: stubs.resolveDeptId,
+  } as unknown as SsoUserProvisioner;
+
   return {
-    service: new AuthService(users, permissions, tokens, sessions, config, sso),
+    service: new AuthService(
+      users,
+      permissions,
+      tokens,
+      sessions,
+      config,
+      sso,
+      ssoClient,
+      provisioner,
+    ),
     stubs,
   };
 }
@@ -411,6 +471,195 @@ describe('AuthService 收尾四接口（profile / 改密 / 统一认证）', () 
         refreshToken: 'refresh-token',
         expiresIn: 7200,
       });
+    });
+  });
+
+  describe('login 分流与回退', () => {
+    it('authSource=local → 不调 SSO，走本地 bcrypt', async () => {
+      const { service, stubs } = buildService({
+        findByUsername: jest
+          .fn()
+          .mockResolvedValue(sysUser({ authSource: 'local' })),
+      });
+
+      const tokens = await service.login({
+        username: 'alice',
+        password: OLD_PASSWORD,
+      });
+
+      expect(stubs.ssoLogin).not.toHaveBeenCalled();
+      expect(tokens.accessToken).toBeDefined();
+      expect(tokens.loginSource).toBe('local');
+    });
+
+    it('authSource=sso + SSO 成功 → 回写密码与信息，loginSource=sso', async () => {
+      const { service, stubs } = buildService({
+        findByUsername: jest
+          .fn()
+          .mockResolvedValue(
+            sysUser({ authSource: 'sso', password: hashSync('old', BCRYPT_ROUNDS) }),
+          ),
+        ssoLogin: jest.fn().mockResolvedValue({
+          user: {
+            userName: 'E001',
+            nickName: '新名字',
+            userType: 'teacher',
+            deptId: '10',
+            deptName: '计算机学院',
+            isDefaultPwd: false,
+          },
+        }),
+      });
+
+      const tokens = await service.login({
+        username: 'alice',
+        password: NEW_PASSWORD,
+      });
+
+      expect(stubs.ssoLogin).toHaveBeenCalledWith('alice', NEW_PASSWORD);
+      expect(stubs.syncSsoProfile).toHaveBeenCalledWith(
+        1n,
+        expect.objectContaining({
+          realName: '新名字',
+          passwordHash: expect.any(String),
+        }),
+      );
+      expect(tokens.loginSource).toBe('sso');
+      expect(tokens.isDefaultPwd).toBe(false);
+    });
+
+    it('SSO 凭据错误 → 20101，不回退本地', async () => {
+      const { service, stubs } = buildService({
+        findByUsername: jest
+          .fn()
+          .mockResolvedValue(
+            sysUser({
+              authSource: 'sso',
+              password: hashSync(NEW_PASSWORD, BCRYPT_ROUNDS),
+            }),
+          ),
+        ssoLogin: jest
+          .fn()
+          .mockRejectedValue(new SsoApiError('credentials', '账号或密码错误')),
+      });
+
+      await expect(
+        service.login({ username: 'alice', password: NEW_PASSWORD }),
+      ).rejects.toMatchObject({
+        response: { code: ErrorCode.AUTH_CREDENTIALS_INVALID },
+      });
+      expect(stubs.syncSsoProfile).not.toHaveBeenCalled();
+    });
+
+    it('SSO 不可达 + 本地密码正确 → loginSource=local-fallback', async () => {
+      const { service } = buildService({
+        findByUsername: jest
+          .fn()
+          .mockResolvedValue(
+            sysUser({
+              authSource: 'sso',
+              password: hashSync(OLD_PASSWORD, BCRYPT_ROUNDS),
+            }),
+          ),
+        ssoLogin: jest
+          .fn()
+          .mockRejectedValue(new SsoApiError('unavailable', 'timeout')),
+      });
+
+      const tokens = await service.login({
+        username: 'alice',
+        password: OLD_PASSWORD,
+      });
+
+      expect(tokens.loginSource).toBe('local-fallback');
+      expect(tokens.ssoUnavailable).toBe(true);
+    });
+
+    it('SSO 不可达 + 本地密码错误 → 20101，并记一次失败', async () => {
+      const { service, stubs } = buildService({
+        findByUsername: jest
+          .fn()
+          .mockResolvedValue(
+            sysUser({
+              authSource: 'sso',
+              password: hashSync(OLD_PASSWORD, BCRYPT_ROUNDS),
+            }),
+          ),
+        ssoLogin: jest
+          .fn()
+          .mockRejectedValue(new SsoApiError('unavailable', 'timeout')),
+      });
+
+      await expect(
+        service.login({ username: 'alice', password: NEW_PASSWORD }),
+      ).rejects.toMatchObject({
+        response: { code: ErrorCode.AUTH_CREDENTIALS_INVALID },
+      });
+      expect(stubs.registerLoginFailure).toHaveBeenCalledWith('alice');
+    });
+
+    it('SSO 不可达 + 本地无账号 → 20108', async () => {
+      const { service } = buildService({
+        findByUsername: jest.fn().mockResolvedValue(null),
+        ssoLogin: jest
+          .fn()
+          .mockRejectedValue(new SsoApiError('unavailable', 'timeout')),
+      });
+
+      await expect(
+        service.login({ username: 'nobody', password: 'x' }),
+      ).rejects.toMatchObject({
+        response: { code: ErrorCode.AUTH_SSO_UNAVAILABLE },
+      });
+    });
+
+    it('SSO 返回 5xx 且 fallbackOn5xx=false → 20108，不回退本地', async () => {
+      const { service, stubs } = buildService({
+        findByUsername: jest
+          .fn()
+          .mockResolvedValue(
+            sysUser({
+              authSource: 'sso',
+              password: hashSync(OLD_PASSWORD, BCRYPT_ROUNDS),
+            }),
+          ),
+        ssoLogin: jest
+          .fn()
+          .mockRejectedValue(
+            new SsoApiError('unavailable', 'bad gateway', 502),
+          ),
+      });
+
+      await expect(
+        service.login({ username: 'alice', password: OLD_PASSWORD }),
+      ).rejects.toMatchObject({
+        response: { code: ErrorCode.AUTH_SSO_UNAVAILABLE },
+      });
+      expect(stubs.syncSsoProfile).not.toHaveBeenCalled();
+    });
+
+    it('SSO 锁定 / 配置错误 / 限流 / 响应异常 → 20103 / 20109 / 20110 / 20111', async () => {
+      const cases = [
+        ['locked', ErrorCode.AUTH_LOGIN_LOCKED],
+        ['config', ErrorCode.AUTH_SSO_CONFIG_INVALID],
+        ['rate_limited', ErrorCode.AUTH_SSO_RATE_LIMITED],
+        ['invalid', ErrorCode.AUTH_SSO_RESPONSE_INVALID],
+      ] as const;
+
+      for (const [kind, code] of cases) {
+        const { service } = buildService({
+          findByUsername: jest
+            .fn()
+            .mockResolvedValue(sysUser({ authSource: 'sso' })),
+          ssoLogin: jest
+            .fn()
+            .mockRejectedValue(new SsoApiError(kind, kind)),
+        });
+
+        await expect(
+          service.login({ username: 'alice', password: 'x' }),
+        ).rejects.toMatchObject({ response: { code } });
+      }
     });
   });
 });

@@ -1,5 +1,6 @@
 import { Inject, Injectable, HttpStatus, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { SysUser } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
 import { compareSync, hashSync } from 'bcryptjs';
 import {
@@ -14,6 +15,9 @@ import { PermissionService } from '../permission/permission.service';
 import { UserService } from '../user/user.service';
 import { TokenService } from './token.service';
 import { SSO_PROVIDER, type SsoProvider } from './sso/sso.provider';
+import { SsoApiLoginClient, type SsoLoginUser } from './sso/sso-api-login.client';
+import { SsoApiError } from './sso/sso-error';
+import { SsoUserProvisioner } from '../sync/sso/sso-user-provisioner';
 import type { AppConfig } from '../../config/configuration';
 import type { UserResponseDto } from '../user/dto/user-response.dto';
 import type { AuthProfileResponseDto } from './dto/auth-profile.response.dto';
@@ -42,14 +46,36 @@ export class AuthService {
     private readonly sessions: SessionStore,
     private readonly config: ConfigService<AppConfig, true>,
     @Inject(SSO_PROVIDER) private readonly sso: SsoProvider,
+    private readonly ssoClient: SsoApiLoginClient,
+    private readonly provisioner: SsoUserProvisioner,
   ) {}
 
+  /**
+   * 登录入口。分流规则（design D1）：
+   *
+   * - `authSource = local`：本地账号（超管 / 管理员），永远走 bcrypt。
+   * - `SSO_LOGIN_ENABLED = false`：所有账号都走本地 bcrypt（应急回滚）。
+   * - 其余：先调 SSO api-login；只有网络不可达才回退本地密码。
+   */
   async login(dto: LoginDto): Promise<AuthTokensResponseDto> {
+    const user = await this.users.findByUsername(dto.username);
+
+    if (user !== null && user.authSource === 'local') {
+      return this.localLogin(dto, user);
+    }
+    if (!this.config.get('sso.loginEnabled', { infer: true })) {
+      return this.localLogin(dto, user);
+    }
+    return this.ssoLogin(dto, user);
+  }
+
+  private async localLogin(
+    dto: LoginDto,
+    user: SysUser | null,
+  ): Promise<AuthTokensResponseDto> {
     // 锁定判定放最前：被锁的账号连一次口令校验都不做，既省 CPU，
     // 也让「被锁定」只有一种失败外观（不会先报一次密码错再报锁定）。
     await this.assertNotLocked(dto.username);
-
-    const user = await this.users.findByUsername(dto.username);
 
     // 防用户名枚举（spec 第 7 节登录流程第 2 步）：用户不存在时**仍跑一次 bcrypt**
     // （比对哨兵哈希），让两条路径的耗时同阶。
@@ -76,7 +102,159 @@ export class AuthService {
     await this.sessions.clearLoginFailures(dto.username);
     await this.users.recordLogin(user.id);
 
-    return this.issueTokens(user.id, user.username, user.isSuperAdmin);
+    return this.issueTokens(user.id, user.username, user.isSuperAdmin, {
+      loginSource: 'local',
+      ssoUnavailable: false,
+    });
+  }
+
+  /**
+   * SSO-first 登录。成功时回写本地信息与密码；失败按 `SsoApiError.kind` 分流。
+   *
+   * **只有 `unavailable` 才可能回退本地密码**：SSO 明确说密码错/锁定/应用禁用时
+   * 回退等于绕过 SSO 的密码策略与锁定。
+   */
+  private async ssoLogin(
+    dto: LoginDto,
+    existing: SysUser | null,
+  ): Promise<AuthTokensResponseDto> {
+    let ssoUser: SsoLoginUser;
+    try {
+      const result = await this.ssoClient.login(dto.username, dto.password);
+      ssoUser = result.user;
+    } catch (error: unknown) {
+      if (!(error instanceof SsoApiError)) {
+        throw error;
+      }
+      return this.handleSsoFailure(error, dto, existing);
+    }
+
+    return this.completeSsoLogin(dto, existing, ssoUser);
+  }
+
+  private async completeSsoLogin(
+    dto: LoginDto,
+    existing: SysUser | null,
+    ssoUser: SsoLoginUser,
+  ): Promise<AuthTokensResponseDto> {
+    const userType = ssoUser.userType;
+    if (userType !== 'teacher' && userType !== 'student') {
+      // 统一认证通过，但本系统不自动为 admin / 未知类型建号
+      throw this.ssoUserUnknown();
+    }
+
+    let user = existing;
+    if (user === null) {
+      const provisioned = await this.provisioner.ensureUser({
+        login: ssoUser.userName,
+        realName: ssoUser.nickName,
+        userType,
+        deptId: ssoUser.deptId,
+        deptName: ssoUser.deptName,
+        passwordHash: hashSync(dto.password, BCRYPT_ROUNDS),
+      });
+      user = await this.users.findById(provisioned.userId);
+      if (user === null) {
+        throw this.ssoProvisionFailed();
+      }
+    }
+
+    if (user.status !== 1) {
+      throw this.accountDisabled();
+    }
+
+    const deptId = await this.provisioner.resolveDeptId(
+      ssoUser.deptId,
+      ssoUser.deptName,
+    );
+    const passwordHash = compareSync(dto.password, user.password)
+      ? null
+      : hashSync(dto.password, BCRYPT_ROUNDS);
+
+    await this.users.syncSsoProfile(user.id, {
+      realName:
+        ssoUser.nickName.trim() === '' ? user.realName : ssoUser.nickName,
+      deptId,
+      passwordHash,
+    });
+
+    await this.sessions.clearLoginFailures(dto.username);
+    await this.users.recordLogin(user.id);
+
+    return this.issueTokens(user.id, user.username, user.isSuperAdmin, {
+      loginSource: 'sso',
+      ssoUnavailable: false,
+      isDefaultPwd: ssoUser.isDefaultPwd,
+    });
+  }
+
+  private async handleSsoFailure(
+    error: SsoApiError,
+    dto: LoginDto,
+    existing: SysUser | null,
+  ): Promise<AuthTokensResponseDto> {
+    switch (error.kind) {
+      case 'credentials':
+        throw this.credentialsInvalid();
+      case 'locked':
+        throw this.loginLocked();
+      case 'rate_limited':
+        throw this.ssoRateLimited();
+      case 'config':
+        throw this.ssoConfigInvalid();
+      case 'invalid':
+        throw this.ssoResponseInvalid();
+      case 'unavailable':
+        break;
+    }
+
+    const fallbackEnabled = this.config.get('sso.fallbackEnabled', {
+      infer: true,
+    });
+    const fallbackOn5xx = this.config.get('sso.fallbackOn5xx', {
+      infer: true,
+    });
+    const is5xx = error.httpStatus !== null && error.httpStatus >= 500;
+
+    if (!fallbackEnabled || (is5xx && !fallbackOn5xx)) {
+      throw this.ssoUnavailable();
+    }
+
+    return this.localFallback(dto, existing);
+  }
+
+  /** 仅网络不可达时走到这里；本地锁定只约束这条路径，不阻止 SSO 正常登录 */
+  private async localFallback(
+    dto: LoginDto,
+    existing: SysUser | null,
+  ): Promise<AuthTokensResponseDto> {
+    if (existing === null) {
+      throw this.ssoUnavailable();
+    }
+
+    await this.assertNotLocked(dto.username);
+
+    if (existing.status !== 1) {
+      throw this.accountDisabled();
+    }
+
+    if (!compareSync(dto.password, existing.password)) {
+      const attempts = await this.sessions.registerLoginFailure(dto.username);
+      if (attempts >= LOGIN_MAX_ATTEMPTS) {
+        throw this.loginLocked();
+      }
+      throw this.credentialsInvalid();
+    }
+
+    await this.sessions.clearLoginFailures(dto.username);
+    await this.users.recordLogin(existing.id);
+
+    return this.issueTokens(
+      existing.id,
+      existing.username,
+      existing.isSuperAdmin,
+      { loginSource: 'local-fallback', ssoUnavailable: true },
+    );
   }
 
   /**
@@ -91,6 +269,10 @@ export class AuthService {
     userId: bigint,
     username: string,
     isSuperAdmin: boolean,
+    extras: Pick<
+      AuthTokensResponseDto,
+      'loginSource' | 'ssoUnavailable' | 'isDefaultPwd'
+    > = {},
   ): Promise<AuthTokensResponseDto> {
     const sv = await this.sessions.ensureSessionVersion(userId);
 
@@ -117,6 +299,7 @@ export class AuthService {
       accessToken: access.token,
       refreshToken: refresh.token,
       expiresIn: access.expiresIn,
+      ...extras,
     };
   }
 
@@ -371,6 +554,46 @@ export class AuthService {
       ErrorCode.AUTH_SSO_USER_UNKNOWN,
       '统一认证已通过，但本系统没有对应账号，请联系管理员',
       HttpStatus.FORBIDDEN,
+    );
+  }
+
+  private ssoUnavailable(): BusinessException {
+    return new BusinessException(
+      ErrorCode.AUTH_SSO_UNAVAILABLE,
+      '统一认证暂不可用，请稍后重试',
+      HttpStatus.SERVICE_UNAVAILABLE,
+    );
+  }
+
+  private ssoConfigInvalid(): BusinessException {
+    return new BusinessException(
+      ErrorCode.AUTH_SSO_CONFIG_INVALID,
+      '统一认证配置异常，请联系管理员',
+      HttpStatus.BAD_GATEWAY,
+    );
+  }
+
+  private ssoRateLimited(): BusinessException {
+    return new BusinessException(
+      ErrorCode.AUTH_SSO_RATE_LIMITED,
+      '统一认证请求过于频繁，请稍后重试',
+      HttpStatus.TOO_MANY_REQUESTS,
+    );
+  }
+
+  private ssoResponseInvalid(): BusinessException {
+    return new BusinessException(
+      ErrorCode.AUTH_SSO_RESPONSE_INVALID,
+      '统一认证返回异常，请稍后重试',
+      HttpStatus.BAD_GATEWAY,
+    );
+  }
+
+  private ssoProvisionFailed(): BusinessException {
+    return new BusinessException(
+      ErrorCode.AUTH_SSO_PROVISION_FAILED,
+      '统一认证已通过，但本地账号创建失败，请联系管理员',
+      HttpStatus.INTERNAL_SERVER_ERROR,
     );
   }
 

@@ -79,6 +79,41 @@ export class UserService {
     return toUserResponse(updated);
   }
 
+  /**
+   * SSO 登录成功后的本地回写：人员信息归源系统，密码只作为故障回退。
+   *
+   * **不 revoke 会话**：这不是「改密码」的语义，而是把源系统的最新密码镜像到本地。
+   * 调用方（AuthService）已经算好 `passwordHash = null` 表示「本次密码与本地一致」，
+   * 这里只在非 null 时写。
+   */
+  async syncSsoProfile(
+    id: bigint,
+    input: {
+      realName: string;
+      deptId: bigint | null;
+      passwordHash: string | null;
+    },
+  ): Promise<void> {
+    const current = await this.repository.findById(id);
+    if (current === null || current.status !== 1) {
+      throw new BusinessException(
+        ErrorCode.AUTH_ACCOUNT_DISABLED,
+        '账号已停用，请联系管理员',
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+
+    await this.repository.update(id, {
+      username: current.username,
+      realName: input.realName,
+      ...(input.deptId === null ? {} : { deptId: input.deptId }),
+    });
+
+    if (input.passwordHash !== null) {
+      await this.repository.updatePassword(id, input.passwordHash);
+    }
+  }
+
   async assertExists(id: bigint): Promise<void> {
     await this.mustFind(id);
   }

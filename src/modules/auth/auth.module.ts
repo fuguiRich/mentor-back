@@ -6,6 +6,7 @@ import { PermissionModule } from '../permission/permission.module';
 import { RateLimitModule } from '../../infra/rate-limit/rate-limit.module';
 import { RateLimitGuard } from '../../infra/rate-limit/rate-limit.guard';
 import { UserModule } from '../user/user.module';
+import { SyncModule } from '../sync/sync.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { PermissionCacheService } from './permission-cache.service';
@@ -37,6 +38,7 @@ import { SsoRateLimiter } from './sso/sso-rate-limiter.service';
     UserModule,
     PermissionModule,
     RateLimitModule,
+    SyncModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
