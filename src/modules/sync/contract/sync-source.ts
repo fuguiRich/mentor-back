@@ -36,7 +36,20 @@ export interface SyncPersonRow {
 }
 
 /**
- * 外部数据源。按对接方实现；本期只有 {@link import('../mock-source').MockSyncSource}。
+ * 全量离场的作用域。`undefined` = 老行为（处理同步层所有行）；
+ * SSO 源必须限定，否则会把 mock / 历史数据和外校导师一起停用。
+ */
+export interface SyncRetirementScope {
+  /** 只处理 code 以它开头的组织行，如 `sso:` */
+  orgCodePrefix?: string;
+  /** 只处理这些 personType 的人员行 */
+  personTypes?: readonly string[];
+  /** 只处理这些 authSource 的账号（需回查 SysUser） */
+  authSources?: readonly string[];
+}
+
+/**
+ * 外部数据源。按对接方实现；本期有 mock 与 SSO 两个实现。
  *
  * `since` 为 `null` 表示全量（N2）。**退化责任在实现方**：给不出增量的实现
  * 无视 `since` 返回全部即可，本系统不替它判断「哪些变了」。
@@ -44,6 +57,10 @@ export interface SyncPersonRow {
 export interface SyncSource {
   /** 数据源标识，落 `SyncRun.source`（如 `mock` / `xg` / `rs`）。自描述，免得调用方传错串 */
   readonly name: string;
+  /** 离场作用域；不配 = 处理所有同步行（mock 的老行为） */
+  readonly retirementScope?: SyncRetirementScope;
+  /** 源根是否复用本地已有的根部门（SSO 源必须为 true，否则会出现两个根） */
+  readonly reuseRootDept?: boolean;
   fetchOrgUnits(since: Date | null): Promise<SyncOrgUnitRow[]>;
   fetchPersons(since: Date | null): Promise<SyncPersonRow[]>;
 }

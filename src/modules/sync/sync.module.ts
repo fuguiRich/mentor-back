@@ -7,6 +7,7 @@ import { SyncRunRepository } from './sync-run.repository';
 import { SyncService } from './sync.service';
 import { SsoUserProvisioner } from './sso/sso-user-provisioner';
 import { SsoOpenApiClient } from './sso/sso-open-api.client';
+import { SsoSyncSource } from './sso/sso-sync.source';
 
 /**
  * 同步模块。**不带 controller**：同步任务本期没有 HTTP 触发入口，
@@ -28,7 +29,8 @@ import { SsoOpenApiClient } from './sso/sso-open-api.client';
       useFactory: (config: ConfigService) => new SsoOpenApiClient(config as never),
       inject: [ConfigService],
     },
+    SsoSyncSource,
   ],
-  exports: [SyncService, SsoUserProvisioner, SsoOpenApiClient],
+  exports: [SyncService, SsoUserProvisioner, SsoOpenApiClient, SsoSyncSource],
 })
 export class SyncModule {}

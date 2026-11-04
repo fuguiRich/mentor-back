@@ -19,10 +19,11 @@ export class SyncRunRepository {
 
   /** 开一条 `RUNNING` 的流水。`startedAt` 取**这一刻**，不是 `@default(now())`——
    *  它要跟 `finishedAt` 配对算时长，也供 `findLastOkFinishedAt` 排序 */
-  async start(source: string): Promise<SyncRun> {
+  async start(source: string, mode: 'incremental' | 'full'): Promise<SyncRun> {
     return this.prisma.client.syncRun.create({
       data: {
         source,
+        mode,
         startedAt: new Date(),
         status: SyncRunStatus.RUNNING,
         // 类型占位：扩展会剥掉再按当前操作者重写（同步任务跑在请求上下文之外，
@@ -80,5 +81,62 @@ export class SyncRunRepository {
       select: { finishedAt: true },
     });
     return run?.finishedAt ?? null;
+  }
+
+  /**
+   * 增量水位：同 source 最近一条 **OK 或 PARTIAL** 流水的 `startedAt`。
+   *
+   * PARTIAL 也推进，是为了避免「一行永久 `org_not_found`」把每次同步都拖回全量；
+   * 失败行由下一次全量重试。用 `startedAt` 而不是 `finishedAt`，因为同步过程中
+   * 更新的行可能落在 `startedAt..finishedAt` 之间，调用方还会再减 5 分钟重叠。
+   * FAILED 不推进：拉数失败时源数据是未知的。
+   */
+  async findLastUsableStartedAt(source: string): Promise<Date | null> {
+    const run = await this.prisma.client.syncRun.findFirst({
+      where: {
+        source,
+        status: { in: [SyncRunStatus.OK, SyncRunStatus.PARTIAL] },
+      },
+      orderBy: { startedAt: 'desc' },
+      select: { startedAt: true },
+    });
+    return run?.startedAt ?? null;
+  }
+
+  /** 最近一次成功的全量跑；调度器用它决定这次跑全量还是增量 */
+  async findLastFinishedByMode(
+    source: string,
+    mode: 'incremental' | 'full',
+  ): Promise<Date | null> {
+    const run = await this.prisma.client.syncRun.findFirst({
+      where: {
+        source,
+        mode,
+        status: SyncRunStatus.OK,
+        finishedAt: { not: null },
+      },
+      orderBy: { finishedAt: 'desc' },
+      select: { finishedAt: true },
+    });
+    return run?.finishedAt ?? null;
+  }
+
+  /** 流水列表。`source` 为空 = 全部来源 */
+  async findPage(
+    source: string | undefined,
+    page: number,
+    pageSize: number,
+  ): Promise<{ rows: SyncRun[]; total: number }> {
+    const where = source === undefined ? {} : { source };
+    const [total, rows] = await Promise.all([
+      this.prisma.client.syncRun.count({ where }),
+      this.prisma.client.syncRun.findMany({
+        where,
+        orderBy: { startedAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+    ]);
+    return { rows, total };
   }
 }

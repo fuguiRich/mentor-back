@@ -111,6 +111,14 @@ describe('同步框架 + 投影 (e2e)', () => {
     return run.finishedAt;
   }
 
+  async function readStartedAt(runId: bigint): Promise<Date> {
+    const run = await prisma.client.syncRun.findFirst({ where: { id: runId } });
+    if (run === null) {
+      throw new Error(`流水 ${runId} 不在`);
+    }
+    return run.startedAt;
+  }
+
   /** 取一个带 state 的 authorize URL，并把 state 解出来（照 auth-sso 的写法） */
   async function fetchAuthorizeState(): Promise<string> {
     const response = await request(app.getHttpServer() as Server)
@@ -614,8 +622,8 @@ describe('同步框架 + 投影 (e2e)', () => {
     });
   });
 
-  describe('Ruling 25：增量水位只在 OK 时推进', () => {
-    it('PARTIAL 不动水位，失败那批的行下一次原样重试', async () => {
+  describe('水位：PARTIAL 也推进，失败行靠全量重试', () => {
+    it('PARTIAL 推进水位到 startedAt - 5min；显式 full 才重试失败行', async () => {
       await reset();
       await seedRoles();
 
@@ -629,13 +637,12 @@ describe('同步框架 + 投影 (e2e)', () => {
       expect(first.mode).toBe('full');
       expect(source.seenSince[0]).toBeNull();
 
-      // 第二次：水位在 → 增量，起点是第一次那条的 finishedAt
+      // 第二次：水位在 → 增量，起点是第一次 startedAt - 5 分钟
       const second = await sync.runOnce(source);
       expect(second.mode).toBe('incremental');
-      expect(source.seenSince[1]).toEqual(await readFinishedAt(first.runId));
-
-      // 第二次跑成了 OK，水位才推进到它自己
-      const watermark = await readFinishedAt(second.runId);
+      expect(source.seenSince[1]).toEqual(
+        new Date((await readStartedAt(first.runId)).getTime() - 5 * 60 * 1000),
+      );
 
       // 制造一次 PARTIAL：加一个缺角色的人
       source.persons = [
@@ -655,23 +662,24 @@ describe('同步框架 + 投影 (e2e)', () => {
       const partial = await sync.runOnce(source);
       expect(partial.status).toBe(SyncRunStatus.PARTIAL);
       expect(partial.mode).toBe('incremental');
-      // 水位没推进：还是第二次那条 OK 的 finishedAt
-      expect(source.seenSince[2]).toEqual(watermark);
 
-      // 第四次：还是那个水位 → 失败那行仍在窗口内，会被重试
-      await seedRole('student', '学生');
+      // PARTIAL 也推进水位：下一次增量从本次 startedAt - 5min 开始
+      const partialSince = new Date(
+        (await readStartedAt(partial.runId)).getTime() - 5 * 60 * 1000,
+      );
       const retried = await sync.runOnce(source);
       expect(retried.mode).toBe('incremental');
-      expect(source.seenSince[3]).toEqual(watermark);
-      expect(retried.status).toBe(SyncRunStatus.OK);
+      expect(source.seenSince[3]).toEqual(partialSince);
+
+      // 显式全量：since = null，失败行被重新处理
+      await seedRole('student', '学生');
+      const full = await sync.runOnce(source, { mode: 'full' });
+      expect(full.mode).toBe('full');
+      expect(source.seenSince[4]).toBeNull();
+      expect(full.status).toBe(SyncRunStatus.OK);
       await expect(
         prisma.client.sysUser.findFirst({ where: { username: 'T6-S1' } }),
       ).resolves.not.toBeNull();
-
-      // 成功了才推进
-      const fifth = await sync.runOnce(source);
-      expect(fifth.mode).toBe('incremental');
-      expect(source.seenSince[4]).toEqual(await readFinishedAt(retried.runId));
     });
   });
 

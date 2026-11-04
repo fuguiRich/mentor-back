@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { SyncOrgUnit } from '@prisma/client';
+import type { SyncOrgUnit, SyncRun } from '@prisma/client';
 import { runWithSyncWrite } from '../../infra/prisma/sync-write-scope';
 import type {
   SyncMode,
@@ -184,7 +184,7 @@ export class SyncService {
   ) {}
 
   /**
-   * 跑一次同步。
+   * 跑一次同步（启动 + 执行）。调度器与测试用这个入口。
    *
    * 计数口径：`total` = 本次处理的行数 = 本批行数（org + person）+ 全量跑里
    * 被离场的行数。**`okCount + failCount === total` 恒成立**——它是这条流水
@@ -194,17 +194,46 @@ export class SyncService {
     source: SyncSource,
     options: { mode?: SyncMode } = {},
   ): Promise<SyncRunResult> {
-    const requested = options.mode ?? 'incremental';
-    // 增量起点只认「上一次**成功**」的 finishedAt（Ruling 25）。
-    // **水位只在 OK 时推进**：上一次 PARTIAL / FAILED 不动它，于是失败那一批的行
-    // 在下一次增量里仍落在窗口内，会被原样重试——这比「退回全量」更准也更便宜。
-    const since =
-      requested === 'full'
-        ? null
-        : await this.runs.findLastOkFinishedAt(source.name);
-    const mode: SyncMode = since === null ? 'full' : 'incremental';
+    const last = await this.runs.findLastUsableStartedAt(source.name);
+    const mode: SyncMode =
+      options.mode === 'full' ? 'full' : last === null ? 'full' : 'incremental';
+    const run = await this.startRun(source, { mode });
+    return this.executeRun(source, run, { mode });
+  }
 
-    const run = await this.runs.start(source.name);
+  /**
+   * 开一条 RUNNING 流水。**有效 mode 在这里定**：请求增量但没有可用水位
+   * （第一次跑 / 上一次 FAILED）→ 全量。手动触发接口用它拿到 runId 后后台执行。
+   */
+  async startRun(
+    source: SyncSource,
+    options: { mode: SyncMode },
+  ): Promise<SyncRun> {
+    const last = await this.runs.findLastUsableStartedAt(source.name);
+    const effective: SyncMode =
+      options.mode === 'full' ? 'full' : last === null ? 'full' : 'incremental';
+    return this.runs.start(source.name, effective);
+  }
+
+  /** 执行一条已经开好的流水。只认 `run.mode`，不再反推。 */
+  async executeRun(
+    source: SyncSource,
+    run: SyncRun,
+    options: { mode: SyncMode },
+  ): Promise<SyncRunResult> {
+    const mode: SyncMode =
+      run.mode === 'incremental' || run.mode === 'full'
+        ? run.mode
+        : options.mode;
+    // PARTIAL 也推进水位；FAILED 不推进。减 5 分钟重叠，避免同步过程中更新的行
+    // 落在 startedAt..finishedAt 之间而漏掉。
+    const last =
+      mode === 'full'
+        ? null
+        : await this.runs.findLastUsableStartedAt(source.name);
+    const since =
+      last === null ? null : new Date(last.getTime() - 5 * 60 * 1000);
+
     const tally: Tally = { total: 0, okCount: 0, failCount: 0, failures: [] };
 
     // 拉数失败是**整批失败**，不是某一行失败：源都够不着，谈不上逐行对账
@@ -221,10 +250,10 @@ export class SyncService {
     if (tally.failures.length === 0) {
       try {
         await runWithSyncWrite(async () => {
-          await this.syncOrgUnits(orgRows, run.id, tally);
+          await this.syncOrgUnits(orgRows, run.id, tally, source);
           await this.syncPersons(personRows, run.id, tally);
           if (mode === 'full')
-            await this.retireAbsent(orgRows, personRows, tally);
+            await this.retireAbsent(orgRows, personRows, tally, source);
         });
       } catch (error: unknown) {
         // 批级逃逸：不是哪一行的锅，但流水必须收口。记在 source 名下
@@ -279,6 +308,7 @@ export class SyncService {
     rows: SyncOrgUnitRow[],
     runId: bigint,
     tally: Tally,
+    source: SyncSource,
   ): Promise<void> {
     const syncedAt = new Date();
     /** 去重后的批：重复自然键的那几条已在 `dedupeBy` 里记过账，不进后续 */
@@ -327,7 +357,7 @@ export class SyncService {
       if (unit === undefined) continue;
       let outcome: RowOutcome = null;
       try {
-        outcome = await this.linkAndProject(row, unit, byCode);
+        outcome = await this.linkAndProject(row, unit, byCode, source);
       } catch (error: unknown) {
         outcome = reasonOf(error);
       }
@@ -347,6 +377,7 @@ export class SyncService {
     row: SyncOrgUnitRow,
     unit: SyncOrgUnit,
     byCode: Map<string, SyncOrgUnit>,
+    source: SyncSource,
   ): Promise<RowOutcome> {
     let parentId: bigint | null = null;
     let parentDeptId: bigint | null = null;
@@ -368,10 +399,17 @@ export class SyncService {
       remark: null,
     };
     let current = await this.orgs.linkParent(unit, parentId);
-    const existing =
+    let existing =
       current.deptId === null
         ? null
         : await this.projection.findDept(current.deptId);
+
+    // 源根复用本地已有的根部门，避免出现「总部 + 长沙医学院」两个根；
+    // 否则旧根会在离场里被软删，`sc_admin` 的数据范围一起落空。
+    if (existing === null && row.parentCode === null && source.reuseRootDept) {
+      existing = await this.projection.findRootDept();
+    }
+
     if (existing === null) {
       const dept = await this.projection.createDept(desired);
       current = await this.orgs.linkDept(current, dept.id);
@@ -510,10 +548,21 @@ export class SyncService {
     orgRows: SyncOrgUnitRow[],
     personRows: SyncPersonRow[],
     tally: Tally,
+    source: SyncSource,
   ): Promise<void> {
+    const scope = source.retirementScope;
     const presentOrgs = new Set(orgRows.map((row) => row.code));
     for (const unit of await this.orgs.listActive()) {
       if (presentOrgs.has(unit.code)) continue;
+      // 只处理本数据源负责的行：mock / 历史组织不因 SSO 全量而消失
+      if (
+        scope?.orgCodePrefix !== undefined &&
+        !unit.code.startsWith(scope.orgCodePrefix)
+      ) {
+        continue;
+      }
+      // 根行永远不删：它可能被多个源共享，删掉会连带软删根部门
+      if (unit.parentId === null) continue;
       let outcome: RowOutcome = null;
       try {
         if (unit.deptId !== null) {
@@ -529,9 +578,23 @@ export class SyncService {
     const presentPersons = new Set(personRows.map((row) => row.login));
     for (const person of await this.persons.listActive()) {
       if (presentPersons.has(person.login)) continue;
+      // 只处理本数据源负责的人员类型：外校导师不由 SSO 管
+      if (
+        scope?.personTypes !== undefined &&
+        !scope.personTypes.includes(person.personType)
+      ) {
+        continue;
+      }
       let outcome: RowOutcome = null;
       try {
         const user = await this.projection.findUser(person.login);
+        // 管理员手工建的本地账号即使有同名同步行，也不因 SSO 离场被停用
+        if (
+          scope?.authSources !== undefined &&
+          (user === null || !scope.authSources.includes(user.authSource))
+        ) {
+          continue;
+        }
         if (user !== null) await this.projection.disableUser(user.id);
         await this.persons.softDelete(person.id);
       } catch (error: unknown) {
