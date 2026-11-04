@@ -144,6 +144,7 @@ describe('SSO 定时同步 (e2e)', () => {
       'sso.appSecret': 'secret',
       'sso.syncPageSize': 200,
       'sso.apiLoginTimeoutMs': 1000,
+      'sso.openApiTimeoutMs': 1000,
       'sso.caCertPath': '',
     };
     const config = {

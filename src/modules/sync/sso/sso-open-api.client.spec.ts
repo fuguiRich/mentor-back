@@ -3,7 +3,10 @@ import type { ConfigService } from '@nestjs/config';
 import type { AppConfig } from '../../../config/configuration';
 import { buildOpenApiSign, SsoOpenApiClient } from './sso-open-api.client';
 
-function makeClient(fetchImpl: typeof fetch): SsoOpenApiClient {
+function makeClient(
+  fetchImpl: typeof fetch,
+  limiter?: { consume: () => Promise<void> },
+): SsoOpenApiClient {
   const values: Record<string, unknown> = {
     'sso.baseUrl': 'https://sso.test',
     'sso.openApiPrefix': '/api',
@@ -11,13 +14,14 @@ function makeClient(fetchImpl: typeof fetch): SsoOpenApiClient {
     'sso.appSecret': 'secret',
     'sso.syncPageSize': 200,
     'sso.apiLoginTimeoutMs': 1000,
+    'sso.openApiTimeoutMs': 1000,
     'sso.caCertPath': '',
   };
   const config = {
     get: (key: string) => values[key],
     getOrThrow: (key: string) => values[key],
   } as unknown as ConfigService<AppConfig, true>;
-  return new SsoOpenApiClient(config, fetchImpl);
+  return new SsoOpenApiClient(config, fetchImpl, limiter as never);
 }
 
 function json(body: unknown, status = 200): Response {
@@ -127,5 +131,46 @@ describe('SsoOpenApiClient', () => {
       status: 403,
       msg: '没有权限访问此API',
     });
+  });
+
+  it('每个 SSO 请求都消费共享令牌桶', async () => {
+    const consume = jest.fn().mockResolvedValue(undefined);
+    const fetchImpl = jest.fn((url: string) => {
+      if (url.endsWith('/auth/token')) {
+        return json({ code: 200, token: 't', expiresIn: 300 });
+      }
+      return json({ code: 200, total: 0, items: [] });
+    }) as unknown as typeof fetch;
+
+    await makeClient(fetchImpl, { consume }).getClasses();
+
+    // token 请求 + 业务请求，各消费一次
+    expect(consume).toHaveBeenCalledTimes(2);
+  });
+
+  it('5xx 重试后成功', async () => {
+    let teacherCalls = 0;
+    const fetchImpl = jest.fn((url: string) => {
+      if (url.endsWith('/auth/token')) {
+        return json({ code: 200, token: 't', expiresIn: 300 });
+      }
+      teacherCalls += 1;
+      if (teacherCalls === 1) {
+        return json({ code: 500, msg: '上游抖了一下' }, 500);
+      }
+      return json({
+        code: 200,
+        total: 0,
+        page: 1,
+        pageSize: 200,
+        totalPages: 0,
+        items: [],
+      });
+    }) as unknown as typeof fetch;
+
+    const teachers = await makeClient(fetchImpl).getTeachers(null);
+
+    expect(teachers).toEqual([]);
+    expect(teacherCalls).toBe(2);
   });
 });

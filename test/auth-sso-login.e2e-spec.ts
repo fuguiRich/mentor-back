@@ -265,6 +265,35 @@ describe('SSO 登录（api-login 优先 + 本地回退）(e2e)', () => {
     ).toBe('sso');
   });
 
+  it('已有 SSO 账号但缺角色/SyncPerson → 登录时补齐', async () => {
+    await seedUser(prisma, {
+      username: 'T950',
+      password: 'Passw0rd!',
+      authSource: 'sso',
+      deptId: rootDeptId,
+    });
+
+    await request(app.getHttpServer() as Server)
+      .post('/auth/login')
+      .send({ username: 'T950', password: 'Passw0rd!' })
+      .expect(200);
+
+    const user = await prisma.client.sysUser.findFirst({
+      where: { username: 'T950' },
+    });
+    const mentorRole = await prisma.client.sysRole.findFirst({
+      where: { code: 'mentor' },
+    });
+    expect(
+      await prisma.client.sysUserRole.findFirst({
+        where: { userId: user?.id, roleId: mentorRole?.id },
+      }),
+    ).not.toBeNull();
+    expect(
+      await prisma.client.syncPerson.findFirst({ where: { login: 'T950' } }),
+    ).not.toBeNull();
+  });
+
   it('SSO 密码错误 → 401 / 20101，不回退、不建号', async () => {
     ssoMode.kind = 'credentials';
 

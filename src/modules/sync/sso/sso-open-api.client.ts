@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { Agent } from 'undici';
 import type { AppConfig } from '../../../config/configuration';
+import { SsoRateLimiter } from '../../auth/sso/sso-rate-limiter.service';
 import type {
   SsoClass,
   SsoEduCollege,
@@ -63,6 +64,7 @@ export class SsoOpenApiClient {
   constructor(
     private readonly config: ConfigService<AppConfig, true>,
     private readonly fetchImpl: typeof fetch = fetch,
+    private readonly rateLimiter?: SsoRateLimiter,
   ) {}
 
   async getOrgDepartments(): Promise<SsoOrgDept[]> {
@@ -144,49 +146,81 @@ export class SsoOpenApiClient {
   }
 
   private async send<T>(url: URL): Promise<{ status: number; body: T }> {
-    const token = await this.getToken();
-    const timeoutMs = this.config.getOrThrow('sso.apiLoginTimeoutMs', {
+    const timeoutMs = this.config.getOrThrow('sso.openApiTimeoutMs', {
       infer: true,
     });
+    const token = await this.getToken();
 
-    let response: Response;
-    try {
-      response = await this.fetchImpl(url.toString(), {
-        headers: {
-          authorization: `Bearer ${token}`,
-          accept: 'application/json',
-        },
-        signal: AbortSignal.timeout(timeoutMs),
-        ...(this.getDispatcher() === null
-          ? {}
-          : { dispatcher: this.getDispatcher() }),
-      });
-    } catch (error: unknown) {
-      throw new SsoOpenApiError(
-        null,
-        error instanceof Error ? error.message : String(error),
-      );
+    for (let attempt = 0; attempt <= 2; attempt += 1) {
+      try {
+        await this.rateLimiter?.consume();
+        const response = await this.fetchImpl(url.toString(), {
+          headers: {
+            authorization: `Bearer ${token}`,
+            accept: 'application/json',
+          },
+          redirect: 'manual',
+          signal: AbortSignal.timeout(timeoutMs),
+          ...(this.getDispatcher() === null
+            ? {}
+            : { dispatcher: this.getDispatcher() }),
+        });
+
+        if (response.status >= 300 && response.status < 400) {
+          throw new SsoOpenApiError(
+            response.status,
+            'SSO 开放接口返回了重定向',
+          );
+        }
+        if (response.status >= 500 && attempt < 2) {
+          await delay(200 * 2 ** attempt);
+          continue;
+        }
+
+        const text = await response.text();
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(text) as unknown;
+        } catch {
+          throw new SsoOpenApiError(
+            response.status,
+            'SSO 开放接口返回的不是 JSON',
+          );
+        }
+
+        // 401 交给 request() 处理：刷新 token 后重试一次。这里不抛，
+        // 否则重试分支永远走不到。
+        if (response.status === 401) {
+          return { status: 401, body: parsed as T };
+        }
+        const code = readCode(parsed);
+        if (!response.ok || code !== 200) {
+          throw new SsoOpenApiError(response.status, readMsg(parsed));
+        }
+
+        return { status: response.status, body: parsed as T };
+      } catch (error: unknown) {
+        if (error instanceof SsoOpenApiError) {
+          // 5xx 是上游瞬时故障，重试；4xx / 3xx / 解析失败不重试。
+          if (error.status !== null && error.status >= 500 && attempt < 2) {
+            await delay(200 * 2 ** attempt);
+            continue;
+          }
+          throw error;
+        }
+        // 网络错误：重试两次后放弃，交给 SyncService 记整批失败
+        if (attempt < 2) {
+          await delay(200 * 2 ** attempt);
+          continue;
+        }
+        throw new SsoOpenApiError(
+          null,
+          error instanceof Error ? error.message : String(error),
+        );
+      }
     }
 
-    const text = await response.text();
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(text) as unknown;
-    } catch {
-      throw new SsoOpenApiError(response.status, 'SSO 开放接口返回的不是 JSON');
-    }
-
-    const code = readCode(parsed);
-    // 401 交给 request() 处理：刷新 token 后重试一次。这里不抛，
-    // 否则重试分支永远走不到。
-    if (response.status === 401) {
-      return { status: 401, body: parsed as T };
-    }
-    if (!response.ok || code !== 200) {
-      throw new SsoOpenApiError(response.status, readMsg(parsed));
-    }
-
-    return { status: response.status, body: parsed as T };
+    throw new SsoOpenApiError(null, 'SSO 开放接口请求失败');
   }
 
   private async getToken(force = false): Promise<string> {
@@ -202,7 +236,7 @@ export class SsoOpenApiClient {
     const prefix = this.config.getOrThrow('sso.openApiPrefix', { infer: true });
     const appId = this.config.getOrThrow('sso.appId', { infer: true });
     const appSecret = this.config.getOrThrow('sso.appSecret', { infer: true });
-    const timeoutMs = this.config.getOrThrow('sso.apiLoginTimeoutMs', {
+    const timeoutMs = this.config.getOrThrow('sso.openApiTimeoutMs', {
       infer: true,
     });
 
@@ -211,6 +245,7 @@ export class SsoOpenApiClient {
 
     let response: Response;
     try {
+      await this.rateLimiter?.consume();
       response = await this.fetchImpl(`${baseUrl}${prefix}/auth/token`, {
         method: 'POST',
         headers: {
@@ -218,6 +253,7 @@ export class SsoOpenApiClient {
           accept: 'application/json',
         },
         body: JSON.stringify({ appId, appSecret, timestamp, sign }),
+        redirect: 'manual',
         signal: AbortSignal.timeout(timeoutMs),
         ...(this.getDispatcher() === null
           ? {}
@@ -297,4 +333,8 @@ function readNumber(body: unknown, key: string): number | null {
   }
   const value = (body as Record<string, unknown>)[key];
   return typeof value === 'number' ? value : null;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

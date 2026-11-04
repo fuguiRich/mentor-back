@@ -2,7 +2,9 @@ import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/bootstrap';
+import { ErrorCode } from '../src/common/constants/error-code';
 import type { ResponseEnvelope } from '../src/common/interceptors/response.interceptor';
+import { redisKeys } from '../src/infra/redis/redis-keys';
 import { PrismaService } from '../src/infra/prisma/prisma.service';
 import { RedisService } from '../src/infra/redis/redis.service';
 import {
@@ -81,6 +83,21 @@ describe('SSO 同步管理入口 (e2e)', () => {
 
     const body = response.body as ResponseEnvelope<{ runId: string }>;
     expect(body.data.runId).toMatch(/^\d+$/);
+  });
+
+  it('已有同步锁 → POST /sync/sso/run 409', async () => {
+    const tokens = await loginAs(app, admin.username, admin.password);
+    await redis.client.set(redisKeys.sso.syncLock(), '1', 'EX', 60);
+
+    const response = await authedAgent(app, tokens.accessToken)
+      .post('/sync/sso/run')
+      .send({ mode: 'full' })
+      .expect(409);
+
+    expect((response.body as ResponseEnvelope<null>).code).toBe(
+      ErrorCode.CONFLICT,
+    );
+    await redis.client.del(redisKeys.sso.syncLock());
   });
 
   it('普通用户 POST /sync/sso/run → 403', async () => {

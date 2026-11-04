@@ -132,12 +132,11 @@ export class AuthService {
       return this.handleSsoFailure(error, dto, existing);
     }
 
-    return this.completeSsoLogin(dto, existing, ssoUser);
+    return this.completeSsoLogin(dto, ssoUser);
   }
 
   private async completeSsoLogin(
     dto: LoginDto,
-    existing: SysUser | null,
     ssoUser: SsoLoginUser,
   ): Promise<AuthTokensResponseDto> {
     const userType = ssoUser.userType;
@@ -146,20 +145,20 @@ export class AuthService {
       throw this.ssoUserUnknown();
     }
 
-    let user = existing;
+    // **总是**走一遍 provisioner：它按自然键幂等，能补齐半成品账号
+    // （上次建号在角色/SyncPerson 之前失败留下的行）。只在 existing === null
+    // 时调用，会让这类账号永远缺角色，却能登录——正是「能登录但什么都看不见」。
+    const provisioned = await this.provisioner.ensureUser({
+      login: ssoUser.userName,
+      realName: ssoUser.nickName,
+      userType,
+      deptId: ssoUser.deptId,
+      deptName: ssoUser.deptName,
+      passwordHash: hashSync(dto.password, BCRYPT_ROUNDS),
+    });
+    const user = await this.users.findById(provisioned.userId);
     if (user === null) {
-      const provisioned = await this.provisioner.ensureUser({
-        login: ssoUser.userName,
-        realName: ssoUser.nickName,
-        userType,
-        deptId: ssoUser.deptId,
-        deptName: ssoUser.deptName,
-        passwordHash: hashSync(dto.password, BCRYPT_ROUNDS),
-      });
-      user = await this.users.findById(provisioned.userId);
-      if (user === null) {
-        throw this.ssoProvisionFailed();
-      }
+      throw this.ssoProvisionFailed();
     }
 
     if (user.status !== 1) {

@@ -10,6 +10,7 @@ import { SsoOpenApiClient } from './sso/sso-open-api.client';
 import { SsoSyncSource } from './sso/sso-sync.source';
 import { SsoSyncScheduler } from './sso/sso-sync.scheduler';
 import { SyncController } from './sync.controller';
+import { SsoRateLimiter } from '../auth/sso/sso-rate-limiter.service';
 
 /**
  * 同步模块。定时器（`SsoSyncScheduler`）与手动触发入口（`SyncController`）
@@ -24,12 +25,13 @@ import { SyncController } from './sync.controller';
     ProjectionWriter,
     SyncService,
     SsoUserProvisioner,
+    SsoRateLimiter,
     {
       provide: SsoOpenApiClient,
-      // 第二个参数是测试注入的 fetch；工厂避开 Nest 把它当依赖解析
-      useFactory: (config: ConfigService) =>
-        new SsoOpenApiClient(config as never),
-      inject: [ConfigService],
+      // 第二/第三个参数是测试注入的 fetch 与共享令牌桶；工厂避开 Nest 解析它们
+      useFactory: (config: ConfigService, rateLimiter: SsoRateLimiter) =>
+        new SsoOpenApiClient(config as never, fetch, rateLimiter),
+      inject: [ConfigService, SsoRateLimiter],
     },
     SsoSyncSource,
     SsoSyncScheduler,

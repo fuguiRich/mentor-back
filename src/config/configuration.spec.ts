@@ -133,6 +133,7 @@ describe('configuration sso login/sync', () => {
       const cfg = configuration();
       expect(cfg.sso.loginEnabled).toBe(false);
       expect(cfg.sso.syncEnabled).toBe(false);
+      expect(cfg.sso.openApiTimeoutMs).toBe(10000);
     });
   });
 

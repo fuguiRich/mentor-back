@@ -45,6 +45,7 @@ export interface AppConfig {
     apiLoginPath: string;
     publicKeyPath: string;
     apiLoginTimeoutMs: number;
+    openApiTimeoutMs: number;
     /** 本地 Redis 令牌桶，默认 55 次/分钟，低于 SSO 单应用 60 次/分钟 */
     rateLimitPerMinute: number;
     fallbackEnabled: boolean;
@@ -173,6 +174,7 @@ export default (): AppConfig => {
       apiLoginPath: env.SSO_API_LOGIN_PATH ?? '/sso/login/api-login',
       publicKeyPath: env.SSO_PUBLIC_KEY_PATH ?? '/sso/app/public-key',
       apiLoginTimeoutMs: Number(env.SSO_API_LOGIN_TIMEOUT_MS || 5000),
+      openApiTimeoutMs: Number(env.SSO_OPENAPI_TIMEOUT_MS || 10000),
       rateLimitPerMinute: Number(env.SSO_RATE_LIMIT_PER_MINUTE || 55),
       fallbackEnabled: parseBool(env.SSO_FALLBACK_ENABLED, true),
       fallbackOn5xx: parseBool(env.SSO_FALLBACK_ON_5XX, false),

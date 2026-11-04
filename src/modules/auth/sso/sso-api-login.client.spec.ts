@@ -1,4 +1,4 @@
-import { createHmac } from 'node:crypto';
+import { createHmac, generateKeyPairSync } from 'node:crypto';
 import { classifySsoFailure } from './sso-error';
 import { buildApiLoginSign, SsoApiLoginClient } from './sso-api-login.client';
 import { SsoRateLimiter } from './sso-rate-limiter.service';
@@ -75,13 +75,17 @@ describe('classifySsoFailure', () => {
 });
 
 describe('SsoApiLoginClient', () => {
-  function clientWith(fetchImpl: typeof fetch) {
+  function clientWithMode(
+    fetchImpl: typeof fetch,
+    mode: 'plain' | 'rsa' = 'plain',
+  ) {
     const values: Record<string, unknown> = {
       'sso.baseUrl': 'https://sso.test',
       'sso.appId': 'app_x',
       'sso.appSecret': 'secret',
-      'sso.appSecretMode': 'plain',
+      'sso.appSecretMode': mode,
       'sso.apiLoginPath': '/sso/login/api-login',
+      'sso.publicKeyPath': '/sso/app/public-key',
       'sso.apiLoginTimeoutMs': 1000,
       'sso.caCertPath': '',
     };
@@ -91,6 +95,10 @@ describe('SsoApiLoginClient', () => {
       consume: jest.fn().mockResolvedValue(undefined),
     } as never;
     return new SsoApiLoginClient(config, limiter, fetchImpl);
+  }
+
+  function clientWith(fetchImpl: typeof fetch) {
+    return clientWithMode(fetchImpl, 'plain');
   }
 
   it('成功 → 解析 user', async () => {
@@ -145,6 +153,81 @@ describe('SsoApiLoginClient', () => {
     await expect(
       clientWith(fetchImpl).login('T001', 'x'),
     ).rejects.toMatchObject({ kind: 'unavailable' });
+  });
+
+  it('RSA 模式：公钥获取网络失败 → unavailable（仍可回退本地密码）', async () => {
+    const fetchImpl = jest
+      .fn()
+      .mockRejectedValue(
+        new TypeError('fetch failed'),
+      ) as unknown as typeof fetch;
+
+    await expect(
+      clientWithMode(fetchImpl, 'rsa').login('T001', 'x'),
+    ).rejects.toMatchObject({ kind: 'unavailable' });
+  });
+
+  it('RSA 模式：成功加密 appSecret 后登录', async () => {
+    const { publicKey } = generateKeyPairSync('rsa', {
+      modulusLength: 2048,
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    });
+    let loginBody: Record<string, unknown> | null = null;
+
+    const fetchImpl = jest.fn((url: string, init?: RequestInit) => {
+      if (url.endsWith('/sso/app/public-key')) {
+        return new Response(JSON.stringify({ publicKey }), { status: 200 });
+      }
+      loginBody = JSON.parse(init?.body as string) as Record<string, unknown>;
+      return new Response(
+        JSON.stringify({
+          code: 200,
+          user: {
+            userName: 'T001',
+            nickName: '张明远',
+            userType: 'teacher',
+            dept: { deptId: '10', deptName: '计算机学院' },
+          },
+        }),
+        { status: 200 },
+      );
+    }) as unknown as typeof fetch;
+
+    const result = await clientWithMode(fetchImpl, 'rsa').login(
+      'T001',
+      'Passw0rd!',
+    );
+
+    expect(result.user.userName).toBe('T001');
+    expect(loginBody).not.toBeNull();
+    expect(typeof loginBody!.appSecret).toBe('string');
+    expect(loginBody!.appKey).toBeUndefined();
+  });
+
+  it('3xx 重定向 → invalid，不跟随', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(
+      new Response('', {
+        status: 302,
+        headers: { location: 'https://evil.example' },
+      }),
+    ) as unknown as typeof fetch;
+
+    await expect(
+      clientWith(fetchImpl).login('T001', 'x'),
+    ).rejects.toMatchObject({ kind: 'invalid' });
+  });
+
+  it('RSA 公钥响应无效 → config', async () => {
+    const fetchImpl = jest
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ publicKey: '' }), { status: 200 }),
+      ) as unknown as typeof fetch;
+
+    await expect(
+      clientWithMode(fetchImpl, 'rsa').login('T001', 'x'),
+    ).rejects.toMatchObject({ kind: 'config' });
   });
 });
 

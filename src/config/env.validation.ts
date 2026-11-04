@@ -121,6 +121,7 @@ export function validateEnv(
 
   for (const key of [
     'SSO_API_LOGIN_TIMEOUT_MS',
+    'SSO_OPENAPI_TIMEOUT_MS',
     'SSO_RATE_LIMIT_PER_MINUTE',
     'SSO_SYNC_INTERVAL_SECONDS',
     'SSO_SYNC_FULL_INTERVAL_SECONDS',

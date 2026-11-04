@@ -111,6 +111,9 @@ export class SsoApiLoginClient {
           accept: 'application/json',
         },
         body: JSON.stringify(body),
+        // 不跟随重定向：307/308 会把含明文密码的 body 重发到别处，
+        // 302 到 HTML 页又会被误判成 invalid/unavailable。
+        redirect: 'manual',
         signal: AbortSignal.timeout(timeoutMs),
         ...(this.getDispatcher() === null
           ? {}
@@ -124,6 +127,14 @@ export class SsoApiLoginClient {
         null,
         null,
         error instanceof Error ? error.message : String(error),
+      );
+    }
+
+    if (response.status >= 300 && response.status < 400) {
+      throw new SsoApiError(
+        'invalid',
+        'SSO 登录地址返回了重定向',
+        response.status,
       );
     }
 
@@ -176,15 +187,22 @@ export class SsoApiLoginClient {
     baseUrl: string,
   ): Promise<string> {
     const pem = await this.getPublicKey(baseUrl);
-    const encrypted = publicEncrypt(
-      {
-        key: pem,
-        padding: constants.RSA_PKCS1_OAEP_PADDING,
-        oaepHash: 'sha256',
-      },
-      Buffer.from(secret, 'utf8'),
-    );
-    return encrypted.toString('base64');
+    try {
+      const encrypted = publicEncrypt(
+        {
+          key: pem,
+          padding: constants.RSA_PKCS1_OAEP_PADDING,
+          oaepHash: 'sha256',
+        },
+        Buffer.from(secret, 'utf8'),
+      );
+      return encrypted.toString('base64');
+    } catch (error: unknown) {
+      throw new SsoApiError(
+        'config',
+        `SSO 公钥加密失败：${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   private async getPublicKey(baseUrl: string): Promise<string> {
@@ -205,13 +223,23 @@ export class SsoApiLoginClient {
     try {
       response = await this.fetchImpl(`${baseUrl}${path}`, {
         headers: { accept: 'application/json' },
+        redirect: 'manual',
         signal: AbortSignal.timeout(timeoutMs),
+        ...(this.getDispatcher() === null
+          ? {}
+          : { dispatcher: this.getDispatcher() }),
       });
     } catch (error: unknown) {
+      // 公钥拿不到也是「网络层不可达」，必须让登录链路走本地回退，
+      // 不能归类成 config（那会直接 20109、不给用户任何登录路径）。
       throw new SsoApiError(
-        'config',
+        'unavailable',
         `获取 SSO 公钥失败：${error instanceof Error ? error.message : String(error)}`,
       );
+    }
+
+    if (response.status >= 300 && response.status < 400) {
+      throw new SsoApiError('invalid', 'SSO 公钥地址返回了重定向');
     }
 
     const parsed = await this.readJson(response);
@@ -235,9 +263,16 @@ export class SsoApiLoginClient {
     if (caCertPath === '') {
       return null;
     }
-    this.dispatcher = new Agent({
-      connect: { ca: readFileSync(caCertPath, 'utf8') },
-    });
+    try {
+      this.dispatcher = new Agent({
+        connect: { ca: readFileSync(caCertPath, 'utf8') },
+      });
+    } catch (error: unknown) {
+      throw new SsoApiError(
+        'config',
+        `读取 SSO CA 证书失败：${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
     this.logger.log(`SSO 使用自定义 CA：${caCertPath}`);
     return this.dispatcher;
   }
