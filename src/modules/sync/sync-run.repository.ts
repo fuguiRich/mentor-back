@@ -126,6 +126,32 @@ export class SyncRunRepository {
     return run?.finishedAt ?? null;
   }
 
+  /**
+   * 进程崩溃/重启后遗留的 RUNNING 流水。拿到同步锁之后调用：
+   * 此时不可能有另一个实例在跑，剩下的 RUNNING 都是死进程留下的。
+   */
+  async failStaleRunning(source: string): Promise<number> {
+    const result = await this.prisma.client.syncRun.updateMany({
+      where: { source, status: SyncRunStatus.RUNNING },
+      data: {
+        status: SyncRunStatus.FAILED,
+        finishedAt: new Date(),
+        detail: {
+          mode: 'incremental',
+          since: null,
+          failures: [
+            {
+              kind: 'orgUnit',
+              key: source,
+              reason: 'stale_running',
+            },
+          ],
+        },
+      },
+    });
+    return result.count;
+  }
+
   /** 最近一条流水（任意状态），给定时任务状态接口用 */
   async findLatest(source: string): Promise<SyncRun | null> {
     return this.prisma.client.syncRun.findFirst({

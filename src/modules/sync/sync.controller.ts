@@ -120,6 +120,8 @@ export class SyncController {
       );
     }
 
+    await this.runs.failStaleRunning('sso');
+
     const settings = await this.settings.getSettings();
     this.source.setStudentsEnabled(settings.studentsEnabled);
     const run = await this.sync.startRun(this.source, { mode });

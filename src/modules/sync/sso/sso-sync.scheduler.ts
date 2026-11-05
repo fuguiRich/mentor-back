@@ -161,6 +161,7 @@ export class SsoSyncScheduler
 
     this.running = true;
     try {
+      await this.runs.failStaleRunning('sso');
       const mode = await this.decideMode(settings.fullIntervalSeconds * 1000);
       const result = await this.sync.runOnce(this.source, { mode });
       this.logger.log(
