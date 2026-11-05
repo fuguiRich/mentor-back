@@ -692,6 +692,64 @@ describe('预约材料 / 过程材料 (e2e)', () => {
     ).toBe(1);
   });
 
+  it('判据 8b：预约材料 / 过程材料可预览下载，外院管理员 403', async () => {
+    const appointment = await createAppointment({ status: 3 });
+    await createRecord(appointment.id);
+    const appointmentFile = await upload('S001', '预览预约材料.png', PNG, {
+      type: 'Appointment',
+      id: appointment.id,
+    });
+    const recordFile = await upload('T001', '预览过程材料.pdf', PDF, {
+      type: 'Appointment',
+      id: appointment.id,
+    });
+
+    const appointmentMaterial = await api('S001')
+      .post(`/appointments/${appointment.id}/materials`)
+      .send({ fileId: appointmentFile.id, kind: 1 })
+      .expect(201);
+    const recordMaterial = await api('T001')
+      .post(`/appointments/${appointment.id}/record/materials`)
+      .send({ fileId: recordFile.id })
+      .expect(201);
+
+    const appointmentMaterialId = (
+      appointmentMaterial.body as ResponseEnvelope<AppointmentMaterialResponseDto>
+    ).data.id;
+    const recordMaterialId = (
+      recordMaterial.body as ResponseEnvelope<AppointmentMaterialResponseDto>
+    ).data.id;
+
+    const preview = await api('S001')
+      .get(
+        `/appointments/${appointment.id}/materials/${appointmentMaterialId}/preview`,
+      )
+      .expect(200);
+    expect(preview.headers['content-disposition']).toContain('inline');
+    expect(preview.body).toEqual(PNG);
+
+    const download = await api('S001')
+      .get(
+        `/appointments/${appointment.id}/materials/${appointmentMaterialId}/download`,
+      )
+      .expect(200);
+    expect(download.headers['content-disposition']).toContain('attachment');
+    expect(download.body).toEqual(PNG);
+
+    const recordPreview = await api('T001')
+      .get(
+        `/appointments/${appointment.id}/record/materials/${recordMaterialId}/preview`,
+      )
+      .expect(200);
+    expect(recordPreview.body).toEqual(PDF);
+
+    await api('adminB')
+      .get(
+        `/appointments/${appointment.id}/materials/${appointmentMaterialId}/preview`,
+      )
+      .expect(403);
+  });
+
   // ── 判据 9：GET 外院管理员 → 403 / 32002 ──────────────────────────
 
   it('判据 9：GET 外院管理员 → 403 / 32002（本院管理员可见）', async () => {
@@ -877,7 +935,7 @@ describe('预约材料 / 过程材料 (e2e)', () => {
     expect(active).toBe(1);
   });
 
-  // ── 判据 14：材料面恰好 4 条路径 / 5 个操作 ────────────────────────
+  // ── 判据 14：材料面恰好 8 条路径 / 9 个操作 ────────────────────────
 
   it('判据 14：材料面恰好 4 条路径 / 5 个操作（docs:gen 总数由门槛命令核）', () => {
     const document = buildDocument(app);
@@ -887,13 +945,21 @@ describe('预约材料 / 过程材料 (e2e)', () => {
         path === '/appointments/{id}/materials' ||
         path === '/appointments/{id}/record/materials' ||
         path === '/appointments/{id}/materials/{materialId}' ||
-        path === '/appointments/{id}/record/materials/{materialId}',
+        path === '/appointments/{id}/record/materials/{materialId}' ||
+        path === '/appointments/{id}/materials/{materialId}/preview' ||
+        path === '/appointments/{id}/materials/{materialId}/download' ||
+        path === '/appointments/{id}/record/materials/{materialId}/preview' ||
+        path === '/appointments/{id}/record/materials/{materialId}/download',
     );
     expect(materialPaths.sort()).toEqual([
       '/appointments/{id}/materials',
       '/appointments/{id}/materials/{materialId}',
+      '/appointments/{id}/materials/{materialId}/download',
+      '/appointments/{id}/materials/{materialId}/preview',
       '/appointments/{id}/record/materials',
       '/appointments/{id}/record/materials/{materialId}',
+      '/appointments/{id}/record/materials/{materialId}/download',
+      '/appointments/{id}/record/materials/{materialId}/preview',
     ]);
     const operations = materialPaths.reduce(
       (sum, path) =>
@@ -903,7 +969,7 @@ describe('预约材料 / 过程材料 (e2e)', () => {
         ).length,
       0,
     );
-    expect(operations).toBe(5);
+    expect(operations).toBe(9);
   });
 
   // ── 判据 15（返工轮 1 / F1）：预约侧 DELETE 的权限码有测试兜底 ──────

@@ -35,6 +35,18 @@ export class FileRepository {
     return { rows, total };
   }
 
+  /** 把无归属文件认领给一条业务记录（草稿上传 → 提交后绑定的路径） */
+  async updateOwner(
+    id: bigint,
+    ownerType: string,
+    ownerId: bigint,
+  ): Promise<void> {
+    await this.prisma.client.sysFile.update({
+      where: { id },
+      data: { ownerType, ownerId },
+    });
+  }
+
   async findById(id: bigint): Promise<SysFile | null> {
     return this.prisma.client.sysFile.findFirst({ where: { id } });
   }

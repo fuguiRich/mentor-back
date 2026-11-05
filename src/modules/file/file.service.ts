@@ -285,6 +285,37 @@ export class FileService {
     // 归属相符：通过，不抛
   }
 
+  /**
+   * 认领无归属文件：草稿阶段先上传（不挂 owner），提交后绑到业务记录。
+   *
+   * 只允许**上传人本人**认领；已被别的记录占用 / 不是本人上传 → 同 404，
+   * 不暴露文件存在性。已属于本记录时幂等通过。
+   */
+  async claimOwnedBy(
+    fileId: string,
+    ownerType: string,
+    ownerId: string,
+    uploaderId: bigint,
+  ): Promise<void> {
+    const entity = await this.repository.findById(BigInt(fileId));
+    if (entity === null) {
+      throw this.fileNotFound();
+    }
+    if (entity.ownerType !== null || entity.ownerId !== null) {
+      if (
+        entity.ownerType === ownerType &&
+        entity.ownerId === BigInt(ownerId)
+      ) {
+        return;
+      }
+      throw this.fileNotFound();
+    }
+    if (entity.createdBy !== uploaderId) {
+      throw this.fileNotFound();
+    }
+    await this.repository.updateOwner(entity.id, ownerType, BigInt(ownerId));
+  }
+
   // ── 校验 ──────────────────────────────────────────────────────
 
   private validate(file: UploadedFile | undefined): {

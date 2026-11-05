@@ -1,4 +1,4 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable, type StreamableFile } from '@nestjs/common';
 import type { MentorProfile, SyncPerson } from '@prisma/client';
 import { ErrorCode } from '../../common/constants/error-code';
 import {
@@ -8,6 +8,7 @@ import {
 import { isDeptInFilter } from '../../common/constants/data-scope';
 import { BusinessException } from '../../common/errors/business.exception';
 import { DataScopeService } from '../data-scope/data-scope.service';
+import { FileService } from '../file/file.service';
 import { UserService } from '../user/user.service';
 import {
   AchievementRepository,
@@ -47,6 +48,7 @@ export class AchievementService {
     private readonly repository: AchievementRepository,
     private readonly users: UserService,
     private readonly dataScope: DataScopeService,
+    private readonly fileService: FileService,
   ) {}
 
   /** `POST /mentors/:mentorId/achievements` */
@@ -88,6 +90,56 @@ export class AchievementService {
       page: query.page,
       pageSize: query.pageSize,
     };
+  }
+
+  /** 预览成果佐证：可见性同成果列表 */
+  async previewProof(
+    mentorId: bigint,
+    achievementId: bigint,
+    caller: RequestUser,
+  ): Promise<StreamableFile> {
+    return this.serveProof(mentorId, achievementId, caller, 'inline');
+  }
+
+  /** 下载成果佐证：可见性同成果列表 */
+  async downloadProof(
+    mentorId: bigint,
+    achievementId: bigint,
+    caller: RequestUser,
+  ): Promise<StreamableFile> {
+    return this.serveProof(
+      mentorId,
+      achievementId,
+      caller,
+      'attachment',
+      'application/octet-stream',
+    );
+  }
+
+  private async serveProof(
+    mentorId: bigint,
+    achievementId: bigint,
+    caller: RequestUser,
+    disposition: 'inline' | 'attachment',
+    type?: string,
+  ): Promise<StreamableFile> {
+    const profile = await this.repository.findProfileWithDept(mentorId);
+    if (profile === null || profile.status !== MENTOR_PROFILE_APPROVED) {
+      throw this.mentorNotFound();
+    }
+    await this.assertVisible(profile, caller);
+
+    const achievement = await this.repository.findOwnedById(
+      profile.id,
+      achievementId,
+    );
+    if (achievement === null) {
+      throw this.achievementNotFound();
+    }
+    if (achievement.proofFileId === null) {
+      throw this.proofNotFound();
+    }
+    return this.fileService.serve(achievement.proofFileId, disposition, type);
   }
 
   /** `PATCH /mentors/:mentorId/achievements/:achievementId`（`type` 不可改） */
@@ -257,6 +309,15 @@ export class AchievementService {
     return new BusinessException(
       ErrorCode.MENTOR_PROFILE_NOT_FOUND,
       '导师专业档案不存在',
+      HttpStatus.NOT_FOUND,
+    );
+  }
+
+  /** 404 / 28101「文件不存在」：成果没有佐证或文件已被清理 */
+  private proofNotFound(): BusinessException {
+    return new BusinessException(
+      ErrorCode.FILE_NOT_FOUND,
+      '文件不存在',
       HttpStatus.NOT_FOUND,
     );
   }

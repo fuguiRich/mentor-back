@@ -789,6 +789,59 @@ export class AppointmentRepository {
   }
 
   /**
+   * 导师维度的指导记录列表 / 导出。按 appointment.mentorProfileId 过滤，
+   * 时间锚点是记录的实际指导时间 actualTime（不是预约的 requestedTime）。
+   */
+  async findMentorGuidanceRecords(
+    mentorProfileId: bigint,
+    filter: {
+      from?: Date;
+      to?: Date;
+      type?: number;
+      skip: number;
+      take: number;
+    },
+  ): Promise<{
+    rows: Array<
+      GuidanceRecord & {
+        appointment: Appointment & { student: SyncPerson };
+      }
+    >;
+    total: number;
+  }> {
+    const where: Prisma.GuidanceRecordWhereInput = {
+      deletedAt: null,
+      appointment: {
+        mentorProfileId,
+        deletedAt: null,
+        ...(filter.type === undefined ? {} : { type: filter.type }),
+      },
+      ...(filter.from === undefined && filter.to === undefined
+        ? {}
+        : {
+            actualTime: {
+              ...(filter.from === undefined ? {} : { gte: filter.from }),
+              ...(filter.to === undefined ? {} : { lte: filter.to }),
+            },
+          }),
+    };
+
+    const [total, rows] = await Promise.all([
+      this.prisma.client.guidanceRecord.count({ where }),
+      this.prisma.client.guidanceRecord.findMany({
+        where,
+        include: {
+          appointment: { include: { student: true } },
+        },
+        orderBy: [{ actualTime: 'desc' }, { id: 'desc' }],
+        skip: filter.skip,
+        take: filter.take,
+      }),
+    ]);
+    return { rows, total };
+  }
+
+  /**
    * `:materialId` 必须**同时**命中 `{ id, appointmentId }`——挂在别的预约下的
    * 材料不算本预约的（调用方 404 / 32005，不暴露「这条材料确实存在」）。
    */

@@ -7,6 +7,7 @@ import { AppointmentExpiryScheduler } from './appointment-expiry.scheduler';
 import { AppointmentController } from './appointment.controller';
 import { AppointmentRepository } from './appointment.repository';
 import { AppointmentService } from './appointment.service';
+import { MentorRecordsController } from './mentor-records.controller';
 
 /**
  * 预约（Task 23-30）。本模块挂 17 条路由（发起 / 确认 / 拒绝 / 改期 / 取消 /
@@ -27,7 +28,7 @@ import { AppointmentService } from './appointment.service';
  */
 @Module({
   imports: [UserModule, DataScopeModule, SysConfigModule, FileModule],
-  controllers: [AppointmentController],
+  controllers: [AppointmentController, MentorRecordsController],
   providers: [
     AppointmentService,
     AppointmentRepository,

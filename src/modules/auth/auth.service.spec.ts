@@ -206,6 +206,7 @@ function buildService(
     recordLogin: stubs.recordLogin,
     changeOwnPassword: stubs.changeOwnPassword,
     syncSsoProfile: stubs.syncSsoProfile,
+    findPersonTypeByUsername: jest.fn().mockResolvedValue('teacher'),
   } as unknown as UserService;
 
   const permissions = {
@@ -277,7 +278,9 @@ describe('AuthService 收尾四接口（profile / 改密 / 统一认证）', () 
 
       const result = await service.getProfile(1n);
 
-      expect(result.user).toBe(detail);
+      expect(result.user).toMatchObject(detail);
+      expect(result.user.personType).toBe('teacher');
+      expect(result.user.mentorType).toBe('internal');
       expect(result.permissions).toEqual(['user:list']);
       expect(result.menus).toBe(menus);
       expect(stubs.findCodesByUserId).toHaveBeenCalledWith(1n);

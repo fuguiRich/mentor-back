@@ -827,7 +827,7 @@ describe('发起预约（学生）(e2e)', () => {
 
   // ── 判据 9：路由形状 ─────────────────────────────────────────────
 
-  it('判据 9：预约面恰好 15 条路径 / 19 个操作（docs:gen 总数由门槛命令核）', () => {
+  it('判据 9：预约面恰好 19 条路径 / 23 个操作（docs:gen 总数由门槛命令核）', () => {
     const document = buildDocument(app);
     const paths = document.paths as Record<string, Record<string, unknown>>;
     const apptPaths = Object.keys(paths).filter((path) =>
@@ -842,7 +842,8 @@ describe('发起预约（学生）(e2e)', () => {
     // Task 30 追加列表（GET /appointments，与 POST 同一条路径，只多 1 个操作）
     // 与详情（GET /appointments/{id}，新路径 + 新操作）；
     // P3 Task 34 追加评价（POST + GET /appointments/{id}/review，1 条路径 / 2 个操作）；
-    // 本面从 1 条变 15 条、19 个操作
+    // 导师端缺口补齐：材料 / 过程材料的 preview + download 再加 4 条路径 / 4 个操作；
+    // 本面从 1 条变 19 条、23 个操作
     expect(apptPaths.sort()).toEqual([
       '/appointments',
       '/appointments/{id}',
@@ -853,9 +854,13 @@ describe('发起预约（学生）(e2e)', () => {
       '/appointments/{id}/dispute',
       '/appointments/{id}/materials',
       '/appointments/{id}/materials/{materialId}',
+      '/appointments/{id}/materials/{materialId}/download',
+      '/appointments/{id}/materials/{materialId}/preview',
       '/appointments/{id}/record',
       '/appointments/{id}/record/materials',
       '/appointments/{id}/record/materials/{materialId}',
+      '/appointments/{id}/record/materials/{materialId}/download',
+      '/appointments/{id}/record/materials/{materialId}/preview',
       '/appointments/{id}/reject',
       '/appointments/{id}/reschedule',
       '/appointments/{id}/review',
@@ -868,7 +873,7 @@ describe('发起预约（学生）(e2e)', () => {
         ).length,
       0,
     );
-    expect(operations).toBe(19);
+    expect(operations).toBe(23);
   });
 
   // ── 判据 10：并发（3 轮）────────────────────────────────────────

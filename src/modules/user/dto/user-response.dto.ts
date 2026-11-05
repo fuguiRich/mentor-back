@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UserResponseDto {
   @ApiProperty({ description: '用户 ID', example: '1' })
@@ -78,4 +78,21 @@ export class UserResponseDto {
 
   @ApiProperty({ description: '最后修改人用户标识；0 表示系统', example: '0' })
   updatedBy!: string;
+
+  @ApiPropertyOptional({
+    type: String,
+    description:
+      '人员类型（来自 SyncPerson）：student / teacher / internalMentor / externalMentor。仅 /auth/profile 返回',
+    example: 'teacher',
+    nullable: true,
+  })
+  personType?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      '导师类型：internal 校内 / external 校外；非导师为空。仅 /auth/profile 返回',
+    enum: ['internal', 'external'],
+    nullable: true,
+  })
+  mentorType?: 'internal' | 'external' | null;
 }

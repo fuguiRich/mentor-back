@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { DataScopeModule } from '../data-scope/data-scope.module';
+import { FileModule } from '../file/file.module';
 import { UserModule } from '../user/user.module';
 import { AchievementController } from './achievement.controller';
 import { AchievementRepository } from './achievement.repository';
@@ -12,7 +13,7 @@ import { AchievementService } from './achievement.service';
  * 写只有 `achievement` 一张表；`mentor_profile` / `sync_person` 只读。
  */
 @Module({
-  imports: [UserModule, DataScopeModule],
+  imports: [UserModule, DataScopeModule, FileModule],
   controllers: [AchievementController],
   providers: [AchievementService, AchievementRepository],
 })

@@ -151,6 +151,9 @@ describe('P1 端到端流程 (e2e)', () => {
       'self',
       [
         'mentor-application:submit',
+        // 真实 mentor 角色同时持有 list（seed 里就是这么配的）：列表可读，
+        // 详情靠服务层 isApplicant 放行本人。
+        'mentor-application:list',
         'mentor:profile',
         'mentor:profile-update',
         'file:create',
@@ -589,6 +592,28 @@ describe('P1 端到端流程 (e2e)', () => {
     expect(body.code).toBe(ErrorCode.FORBIDDEN);
     expect(body.message).toBe('无权限');
     expect(body.data).toBeNull();
+  });
+
+  it('申请人本人 GET /mentor-applications/:id → 200（self 范围可读自己的申请）', async () => {
+    const response = await api('mentor-a')
+      .get(`/mentor-applications/${onboardApp.id.toString()}`)
+      .expect(200);
+    const data = (
+      response.body as ResponseEnvelope<MentorApplicationResponseDto>
+    ).data;
+    expect(data.id).toBe(onboardApp.id.toString());
+    expect(data.applicantId).toBe(personId('mentor-a').toString());
+  });
+
+  it('GET /auth/profile 返回 personType / mentorType', async () => {
+    const response = await api('mentor-a').get('/auth/profile').expect(200);
+    const data = (
+      response.body as ResponseEnvelope<{
+        user: { personType?: string | null; mentorType?: string | null };
+      }>
+    ).data;
+    expect(data.user.personType).toBe('internalMentor');
+    expect(data.user.mentorType).toBe('internal');
   });
 
   it('正链 7：材料能预览下载 → preview 200 + inline，download 200 + attachment，字节一致', async () => {

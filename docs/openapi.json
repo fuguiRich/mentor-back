@@ -7051,6 +7051,194 @@
         ]
       }
     },
+    "/appointments/{id}/materials/{materialId}/preview": {
+      "get": {
+        "description": "可见性同 GET /appointments/:id/materials：申请人本人 / 该预约导师本人 / 数据范围覆盖申请人部门的管理员。返回文件字节流，不是 JSON。",
+        "operationId": "AppointmentController_previewAppointmentMaterial",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "预约行 ID（BIGINT 对外字符串）",
+            "schema": {
+              "example": "1",
+              "type": "string"
+            }
+          },
+          {
+            "name": "materialId",
+            "required": true,
+            "in": "path",
+            "description": "材料行 ID（预约材料 / 过程材料任一表，BIGINT 对外字符串）",
+            "schema": {
+              "example": "1",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "返回文件字节流（不是 JSON）"
+          },
+          "400": {
+            "description": "参数失败（10001）。管道校验失败时 data.fields 给出逐字段清单（schema 如右）；业务层参数失败时 data 为 null。详见全局说明",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "行内预览预约材料（学生上传）",
+        "tags": [
+          "预约"
+        ]
+      }
+    },
+    "/appointments/{id}/materials/{materialId}/download": {
+      "get": {
+        "description": "可见性同预览；Content-Disposition: attachment。",
+        "operationId": "AppointmentController_downloadAppointmentMaterial",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "预约行 ID（BIGINT 对外字符串）",
+            "schema": {
+              "example": "1",
+              "type": "string"
+            }
+          },
+          {
+            "name": "materialId",
+            "required": true,
+            "in": "path",
+            "description": "材料行 ID（预约材料 / 过程材料任一表，BIGINT 对外字符串）",
+            "schema": {
+              "example": "1",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "返回文件字节流（不是 JSON）"
+          },
+          "400": {
+            "description": "参数失败（10001）。管道校验失败时 data.fields 给出逐字段清单（schema 如右）；业务层参数失败时 data 为 null。详见全局说明",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "下载预约材料（学生上传）",
+        "tags": [
+          "预约"
+        ]
+      }
+    },
+    "/appointments/{id}/record/materials/{materialId}/preview": {
+      "get": {
+        "description": "可见性同预约材料；返回文件字节流，不是 JSON。",
+        "operationId": "AppointmentController_previewRecordMaterial",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "预约行 ID（BIGINT 对外字符串）",
+            "schema": {
+              "example": "1",
+              "type": "string"
+            }
+          },
+          {
+            "name": "materialId",
+            "required": true,
+            "in": "path",
+            "description": "材料行 ID（预约材料 / 过程材料任一表，BIGINT 对外字符串）",
+            "schema": {
+              "example": "1",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "返回文件字节流（不是 JSON）"
+          },
+          "400": {
+            "description": "参数失败（10001）。管道校验失败时 data.fields 给出逐字段清单（schema 如右）；业务层参数失败时 data 为 null。详见全局说明",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "行内预览过程材料（导师上传）",
+        "tags": [
+          "预约"
+        ]
+      }
+    },
+    "/appointments/{id}/record/materials/{materialId}/download": {
+      "get": {
+        "description": "可见性同预览；Content-Disposition: attachment。",
+        "operationId": "AppointmentController_downloadRecordMaterial",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "预约行 ID（BIGINT 对外字符串）",
+            "schema": {
+              "example": "1",
+              "type": "string"
+            }
+          },
+          {
+            "name": "materialId",
+            "required": true,
+            "in": "path",
+            "description": "材料行 ID（预约材料 / 过程材料任一表，BIGINT 对外字符串）",
+            "schema": {
+              "example": "1",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "返回文件字节流（不是 JSON）"
+          },
+          "400": {
+            "description": "参数失败（10001）。管道校验失败时 data.fields 给出逐字段清单（schema 如右）；业务层参数失败时 data 为 null。详见全局说明",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "下载过程材料（导师上传）",
+        "tags": [
+          "预约"
+        ]
+      }
+    },
     "/appointments/{id}/materials/{materialId}": {
       "delete": {
         "description": "摘掉**预约材料**（`appointment_material`）。权限码 `appointment:create` 在控制器声明；服务再校验**归属**：调用者必须是该预约的申请人本人。`materialId` 不存在 / 已软删 / 属于别的预约 → **404 / 32005**；不是本人 → **403 / 32002**。摘除是**软删**：材料行打 `deletedAt`，`SysFile` **不动**；摘后同一 fileId 允许再挂。",
@@ -7339,6 +7527,181 @@
         "summary": "预约详情",
         "tags": [
           "预约"
+        ]
+      }
+    },
+    "/mentor/records": {
+      "get": {
+        "description": "按实际指导时间倒序。可按 `from` / `to`（ISO 8601）和预约类型 `type` 筛选。只返回本人名下导师档案的记录；不是导师 → 403 / 32002。",
+        "operationId": "MentorRecordsController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "页码，从 1 开始；不传时为 1",
+            "schema": {
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "每页条数，最大 100；不传时为 20",
+            "schema": {
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "实际指导时间下界（ISO 8601）",
+            "schema": {
+              "example": "2026-01-01T00:00:00.000Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "实际指导时间上界（ISO 8601）",
+            "schema": {
+              "example": "2026-12-31T23:59:59.999Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "required": false,
+            "in": "query",
+            "description": "预约类型：1 双创竞赛 / 2 科研项目 / 3 创业实践 / 4 论文专利 / 5 其他",
+            "schema": {
+              "example": 1,
+              "type": "number",
+              "enum": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MentorRecordListResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数失败（10001）。管道校验失败时 data.fields 给出逐字段清单（schema 如右）；业务层参数失败时 data 为 null。详见全局说明",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "我的指导记录列表",
+        "tags": [
+          "指导记录"
+        ]
+      }
+    },
+    "/mentor/records/export": {
+      "get": {
+        "description": "CSV（UTF-8 + BOM）。表头：预约ID,学生,学号,预约类型,实际指导时间,指导方式,时长(分钟),核心指导内容,后续指导建议。超过 `export.max_rows`（默认 50000）→ 409 / 37004。",
+        "operationId": "MentorRecordsController_export",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "页码，从 1 开始；不传时为 1",
+            "schema": {
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "每页条数，最大 100；不传时为 20",
+            "schema": {
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "实际指导时间下界（ISO 8601）",
+            "schema": {
+              "example": "2026-01-01T00:00:00.000Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "实际指导时间上界（ISO 8601）",
+            "schema": {
+              "example": "2026-12-31T23:59:59.999Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "required": false,
+            "in": "query",
+            "description": "预约类型：1 双创竞赛 / 2 科研项目 / 3 创业实践 / 4 论文专利 / 5 其他",
+            "schema": {
+              "example": 1,
+              "type": "number",
+              "enum": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "CSV 文件"
+          },
+          "400": {
+            "description": "参数失败（10001）。管道校验失败时 data.fields 给出逐字段清单（schema 如右）；业务层参数失败时 data 为 null。详见全局说明",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "导出我的指导记录（CSV）",
+        "tags": [
+          "指导记录"
         ]
       }
     },
@@ -7863,6 +8226,100 @@
           }
         },
         "summary": "某导师的成果列表",
+        "tags": [
+          "双创成果"
+        ]
+      }
+    },
+    "/mentors/{mentorId}/achievements/{achievementId}/proof/preview": {
+      "get": {
+        "description": "可见性同成果列表：导师本人 / 数据范围覆盖导师部门的管理员。返回文件字节流，不是 JSON；没有佐证或文件已清理 → 404 / 28101。",
+        "operationId": "AchievementController_previewProof",
+        "parameters": [
+          {
+            "name": "mentorId",
+            "required": true,
+            "in": "path",
+            "description": "导师档案 ID（MentorProfile.id，BIGINT 对外字符串）",
+            "schema": {
+              "example": "1",
+              "type": "string"
+            }
+          },
+          {
+            "name": "achievementId",
+            "required": true,
+            "in": "path",
+            "description": "成果行 ID（Achievement.id，BIGINT 对外字符串）",
+            "schema": {
+              "example": "1",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "返回文件字节流（不是 JSON）"
+          },
+          "400": {
+            "description": "参数失败（10001）。管道校验失败时 data.fields 给出逐字段清单（schema 如右）；业务层参数失败时 data 为 null。详见全局说明",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "行内预览成果佐证",
+        "tags": [
+          "双创成果"
+        ]
+      }
+    },
+    "/mentors/{mentorId}/achievements/{achievementId}/proof/download": {
+      "get": {
+        "description": "可见性同预览；Content-Disposition: attachment。",
+        "operationId": "AchievementController_downloadProof",
+        "parameters": [
+          {
+            "name": "mentorId",
+            "required": true,
+            "in": "path",
+            "description": "导师档案 ID（MentorProfile.id，BIGINT 对外字符串）",
+            "schema": {
+              "example": "1",
+              "type": "string"
+            }
+          },
+          {
+            "name": "achievementId",
+            "required": true,
+            "in": "path",
+            "description": "成果行 ID（Achievement.id，BIGINT 对外字符串）",
+            "schema": {
+              "example": "1",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "返回文件字节流（不是 JSON）"
+          },
+          "400": {
+            "description": "参数失败（10001）。管道校验失败时 data.fields 给出逐字段清单（schema 如右）；业务层参数失败时 data 为 null。详见全局说明",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "下载成果佐证",
         "tags": [
           "双创成果"
         ]
@@ -11465,6 +11922,21 @@
             "description": "最后修改人用户标识；0 表示系统",
             "example": "0"
           },
+          "personType": {
+            "type": "string",
+            "description": "人员类型（来自 SyncPerson）：student / teacher / internalMentor / externalMentor。仅 /auth/profile 返回",
+            "example": "teacher",
+            "nullable": true
+          },
+          "mentorType": {
+            "type": "string",
+            "description": "导师类型：internal 校内 / external 校外；非导师为空。仅 /auth/profile 返回",
+            "enum": [
+              "internal",
+              "external"
+            ],
+            "nullable": true
+          },
           "roleIds": {
             "description": "已分配的角色 ID 集合",
             "example": [
@@ -11752,6 +12224,21 @@
             "type": "string",
             "description": "最后修改人用户标识；0 表示系统",
             "example": "0"
+          },
+          "personType": {
+            "type": "string",
+            "description": "人员类型（来自 SyncPerson）：student / teacher / internalMentor / externalMentor。仅 /auth/profile 返回",
+            "example": "teacher",
+            "nullable": true
+          },
+          "mentorType": {
+            "type": "string",
+            "description": "导师类型：internal 校内 / external 校外；非导师为空。仅 /auth/profile 返回",
+            "enum": [
+              "internal",
+              "external"
+            ],
+            "nullable": true
           }
         },
         "required": [
@@ -15615,6 +16102,102 @@
           "slotId",
           "student",
           "mentor"
+        ]
+      },
+      "MentorRecordResponseDto": {
+        "type": "object",
+        "properties": {
+          "appointmentId": {
+            "type": "string",
+            "description": "预约 ID",
+            "example": "1"
+          },
+          "studentName": {
+            "type": "string",
+            "description": "学生姓名",
+            "example": "陈一鸣"
+          },
+          "studentLogin": {
+            "type": "string",
+            "description": "学生学号",
+            "example": "S001"
+          },
+          "type": {
+            "type": "number",
+            "description": "预约类型：1 双创竞赛 / 2 科研项目 / 3 创业实践 / 4 论文专利 / 5 其他",
+            "example": 1
+          },
+          "status": {
+            "type": "number",
+            "description": "预约状态：0 待确认 / 1 已确认 / 2 进行中 / 3 记录已提交 / 4 学生已确认 / 5 有异议 / 6 已完成 / 7 已拒绝 / 8 已取消 / 9 已过期",
+            "example": 6
+          },
+          "actualTime": {
+            "type": "string",
+            "description": "实际指导时间（UTC ISO 8601）"
+          },
+          "mode": {
+            "type": "number",
+            "description": "指导方式：1 线上 / 2 线下",
+            "example": 2
+          },
+          "coreContent": {
+            "type": "string",
+            "description": "核心指导内容"
+          },
+          "followUp": {
+            "type": "string",
+            "description": "后续指导建议"
+          },
+          "durationMinutes": {
+            "type": "number",
+            "description": "指导时长（分钟）；0 表示未填",
+            "example": 60
+          }
+        },
+        "required": [
+          "appointmentId",
+          "studentName",
+          "studentLogin",
+          "type",
+          "status",
+          "actualTime",
+          "mode",
+          "coreContent",
+          "followUp",
+          "durationMinutes"
+        ]
+      },
+      "MentorRecordListResponseDto": {
+        "type": "object",
+        "properties": {
+          "list": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MentorRecordResponseDto"
+            }
+          },
+          "total": {
+            "type": "number",
+            "description": "总条数",
+            "example": 12
+          },
+          "page": {
+            "type": "number",
+            "description": "页码",
+            "example": 1
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "每页条数",
+            "example": 20
+          }
+        },
+        "required": [
+          "list",
+          "total",
+          "page",
+          "pageSize"
         ]
       },
       "CreateReviewDto": {

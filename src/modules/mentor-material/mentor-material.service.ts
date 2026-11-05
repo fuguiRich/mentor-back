@@ -71,12 +71,13 @@ export class MentorMaterialService {
     const application = await this.loadApplication(applicationId);
     await this.assertWritable(application, caller);
 
-    // 归属校验：文件必须是**本申请**的附件（ownerType 精确值 O5）。
-    // 不存在 / 无归属 / 归属不符三败同码同文案 404 / 28101（fileNotFound 单点构造）
-    await this.fileService.assertOwnedBy(
+    // 归属校验：已挂在本申请上 → 幂等通过；草稿阶段上传的无归属文件 →
+    // 由上传人本人认领给本申请；其余（别人的 / 已挂别处）→ 404 / 28101。
+    await this.fileService.claimOwnedBy(
       dto.fileId,
       'MentorApplication',
       String(applicationId),
+      caller.userId,
     );
 
     if (

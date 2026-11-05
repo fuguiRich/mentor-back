@@ -171,6 +171,7 @@ interface Harness {
   userFindById: jest.Mock;
   resolveScope: jest.Mock;
   assertDeptVisible: jest.Mock;
+  claimOwnedBy: jest.Mock;
   assertOwnedBy: jest.Mock;
   serve: jest.Mock;
 }
@@ -251,6 +252,7 @@ function buildService(
       ),
     );
   const assertDeptVisible = jest.fn().mockImplementation(() => undefined);
+  const claimOwnedBy = jest.fn().mockImplementation(() => Promise.resolve());
   const assertOwnedBy = jest.fn().mockImplementation(() => Promise.resolve());
   const serve = jest
     .fn()
@@ -271,7 +273,7 @@ function buildService(
     } as unknown as MentorMaterialRepository,
     { findById: userFindById } as unknown as UserService,
     { resolve: resolveScope, assertDeptVisible } as unknown as DataScopeService,
-    { assertOwnedBy, serve } as unknown as FileService,
+    { claimOwnedBy, assertOwnedBy, serve } as unknown as FileService,
   );
 
   return {
@@ -287,6 +289,7 @@ function buildService(
     userFindById,
     resolveScope,
     assertDeptVisible,
+    claimOwnedBy,
     assertOwnedBy,
     serve,
   };
@@ -315,7 +318,7 @@ describe('MentorMaterialService.attach 守卫顺序（§3 先到先拒）', () =
       code: ErrorCode.MENTOR_APPLICATION_NOT_FOUND,
       message: '入驻申请不存在',
     });
-    expect(h.assertOwnedBy).not.toHaveBeenCalled();
+    expect(h.claimOwnedBy).not.toHaveBeenCalled();
     expect(h.create).not.toHaveBeenCalled();
   });
 
@@ -330,7 +333,7 @@ describe('MentorMaterialService.attach 守卫顺序（§3 先到先拒）', () =
       code: ErrorCode.FORBIDDEN,
       message: '无权限',
     });
-    expect(h.assertOwnedBy).not.toHaveBeenCalled();
+    expect(h.claimOwnedBy).not.toHaveBeenCalled();
     expect(h.create).not.toHaveBeenCalled();
   });
 
@@ -358,7 +361,7 @@ describe('MentorMaterialService.attach 守卫顺序（§3 先到先拒）', () =
       code: ErrorCode.FORBIDDEN,
       message: '只有导师（internalMentor / externalMentor）能管理佐证材料',
     });
-    expect(h.assertOwnedBy).not.toHaveBeenCalled();
+    expect(h.claimOwnedBy).not.toHaveBeenCalled();
     expect(h.create).not.toHaveBeenCalled();
   });
 
@@ -384,24 +387,25 @@ describe('MentorMaterialService.attach 守卫顺序（§3 先到先拒）', () =
         code: ErrorCode.MENTOR_APPLICATION_TRANSITION_INVALID,
         message: '当前状态不允许该操作',
       });
-      expect(h.assertOwnedBy).not.toHaveBeenCalled();
+      expect(h.claimOwnedBy).not.toHaveBeenCalled();
       expect(h.create).not.toHaveBeenCalled();
     }
   });
 
   it('⑤ 归属校验按 O5 精确值调用；失败（28101）原样抛出、无行落库', async () => {
     const h = buildService();
-    h.assertOwnedBy.mockRejectedValue(
+    h.claimOwnedBy.mockRejectedValue(
       new BusinessException(ErrorCode.FILE_NOT_FOUND, '文件不存在', 404),
     );
     const error = await captureError(
       h.service.attach(1n, attachDto(), caller()),
     );
 
-    expect(h.assertOwnedBy).toHaveBeenCalledWith(
+    expect(h.claimOwnedBy).toHaveBeenCalledWith(
       '21',
       'MentorApplication',
       '1',
+      1n,
     );
     expect(error.getStatus()).toBe(HttpStatus.NOT_FOUND);
     expect(error.getResponse()).toMatchObject({

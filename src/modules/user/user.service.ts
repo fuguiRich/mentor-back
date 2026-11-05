@@ -72,6 +72,11 @@ export class UserService {
     return { userId: user.id, roleId };
   }
 
+  /** 人员类型：用于 /auth/profile 返回 personType / mentorType */
+  async findPersonTypeByUsername(username: string): Promise<string | null> {
+    return this.repository.findPersonTypeByUsername(username);
+  }
+
   async recordLogin(userId: bigint): Promise<void> {
     await this.repository.recordLogin(userId);
   }

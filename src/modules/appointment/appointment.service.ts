@@ -1,4 +1,4 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable, type StreamableFile } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import type {
@@ -21,12 +21,15 @@ import { DataScopeService } from '../data-scope/data-scope.service';
 import { ConfigService as SysConfigService } from '../config/config.service';
 import { FileService } from '../file/file.service';
 import { UserService } from '../user/user.service';
+import type { MentorRecordListResponseDto } from './dto/mentor-record-response.dto';
+import type { QueryMentorRecordDto } from './dto/query-mentor-record.dto';
 import {
   toAppointmentDetail,
   toAppointmentListItem,
   toAppointmentResponse,
 } from './appointment.mapper';
 import { toGuidanceRecordResponse } from './guidance-record.mapper';
+import { csvFilename } from '../stats/export/csv.writer';
 import {
   toAppointmentMaterialResponse,
   toGuidanceMaterialResponse,
@@ -714,6 +717,237 @@ export class AppointmentService {
       ),
     ];
     return { list, total: list.length, page: 1, pageSize: list.length };
+  }
+
+  /** `GET /mentor/records`：导师本人的指导记录列表 */
+  async listMentorRecords(
+    caller: RequestUser,
+    query: QueryMentorRecordDto,
+  ): Promise<MentorRecordListResponseDto> {
+    const profile = await this.resolveCallerProfile(caller);
+    if (profile === null) {
+      throw this.appointmentForbidden();
+    }
+    const { rows, total } = await this.repository.findMentorGuidanceRecords(
+      profile.id,
+      {
+        ...(query.from === undefined ? {} : { from: new Date(query.from) }),
+        ...(query.to === undefined ? {} : { to: new Date(query.to) }),
+        ...(query.type === undefined ? {} : { type: query.type }),
+        skip: (query.page - 1) * query.pageSize,
+        take: query.pageSize,
+      },
+    );
+    return {
+      list: rows.map((row) => this.toMentorRecord(row)),
+      total,
+      page: query.page,
+      pageSize: query.pageSize,
+    };
+  }
+
+  /** `GET /mentor/records/export`：导师本人指导记录 CSV */
+  async exportMentorRecords(
+    caller: RequestUser,
+    query: QueryMentorRecordDto,
+  ): Promise<{
+    filename: string;
+    header: string[];
+    rows: unknown[][];
+  }> {
+    const profile = await this.resolveCallerProfile(caller);
+    if (profile === null) {
+      throw this.appointmentForbidden();
+    }
+    const maxRows = await this.sysConfig.getNumber('export.max_rows', 50000);
+    const { rows } = await this.repository.findMentorGuidanceRecords(
+      profile.id,
+      {
+        ...(query.from === undefined ? {} : { from: new Date(query.from) }),
+        ...(query.to === undefined ? {} : { to: new Date(query.to) }),
+        ...(query.type === undefined ? {} : { type: query.type }),
+        skip: 0,
+        take: maxRows + 1,
+      },
+    );
+    if (rows.length > maxRows) {
+      throw new BusinessException(
+        ErrorCode.EXPORT_TOO_LARGE,
+        '导出结果超过上限，请缩小查询范围',
+        HttpStatus.CONFLICT,
+      );
+    }
+    return {
+      filename: csvFilename('mentor-records', 'self'),
+      header: [
+        '预约ID',
+        '学生',
+        '学号',
+        '预约类型',
+        '实际指导时间',
+        '指导方式',
+        '时长(分钟)',
+        '核心指导内容',
+        '后续指导建议',
+      ],
+      rows: rows.map((row) => [
+        row.appointmentId,
+        row.appointment.student.realName,
+        row.appointment.student.login,
+        row.appointment.type,
+        row.actualTime,
+        row.mode === 1 ? '线上' : '线下',
+        row.durationMinutes,
+        row.coreContent,
+        row.followUp,
+      ]),
+    };
+  }
+
+  private toMentorRecord(row: {
+    appointmentId: bigint;
+    appointment: {
+      type: number;
+      status: number;
+      student: { realName: string; login: string };
+    };
+    actualTime: Date;
+    mode: number;
+    coreContent: string;
+    followUp: string;
+    durationMinutes: number;
+  }): {
+    appointmentId: string;
+    studentName: string;
+    studentLogin: string;
+    type: number;
+    status: number;
+    actualTime: string;
+    mode: number;
+    coreContent: string;
+    followUp: string;
+    durationMinutes: number;
+  } {
+    return {
+      appointmentId: row.appointmentId.toString(),
+      studentName: row.appointment.student.realName,
+      studentLogin: row.appointment.student.login,
+      type: row.appointment.type,
+      status: row.appointment.status,
+      actualTime: row.actualTime.toISOString(),
+      mode: row.mode,
+      coreContent: row.coreContent,
+      followUp: row.followUp,
+      durationMinutes: row.durationMinutes,
+    };
+  }
+
+  /** 预览预约材料（学生上传）：可见性同 listMaterials */
+  async previewAppointmentMaterial(
+    id: bigint,
+    materialId: bigint,
+    caller: RequestUser,
+  ): Promise<StreamableFile> {
+    return this.serveAppointmentMaterial(id, materialId, caller, 'inline');
+  }
+
+  /** 下载预约材料（学生上传）：可见性同 listMaterials */
+  async downloadAppointmentMaterial(
+    id: bigint,
+    materialId: bigint,
+    caller: RequestUser,
+  ): Promise<StreamableFile> {
+    return this.serveAppointmentMaterial(
+      id,
+      materialId,
+      caller,
+      'attachment',
+      'application/octet-stream',
+    );
+  }
+
+  /** 预览过程材料（导师上传）：可见性同 listMaterials */
+  async previewRecordMaterial(
+    id: bigint,
+    materialId: bigint,
+    caller: RequestUser,
+  ): Promise<StreamableFile> {
+    return this.serveRecordMaterial(id, materialId, caller, 'inline');
+  }
+
+  /** 下载过程材料（导师上传）：可见性同 listMaterials */
+  async downloadRecordMaterial(
+    id: bigint,
+    materialId: bigint,
+    caller: RequestUser,
+  ): Promise<StreamableFile> {
+    return this.serveRecordMaterial(
+      id,
+      materialId,
+      caller,
+      'attachment',
+      'application/octet-stream',
+    );
+  }
+
+  private async serveAppointmentMaterial(
+    id: bigint,
+    materialId: bigint,
+    caller: RequestUser,
+    disposition: 'inline' | 'attachment',
+    type?: string,
+  ): Promise<StreamableFile> {
+    const appointment = await this.repository.findWithStudentById(id);
+    if (appointment === null) {
+      throw this.appointmentNotFound();
+    }
+    await this.assertAppointmentVisible(appointment, caller);
+
+    const material = await this.repository.findAppointmentMaterialById(
+      id,
+      materialId,
+    );
+    if (material === null) {
+      throw this.materialNotFound();
+    }
+    await this.fileService.assertOwnedBy(
+      material.fileId.toString(),
+      'Appointment',
+      id.toString(),
+    );
+    return this.fileService.serve(material.fileId, disposition, type);
+  }
+
+  private async serveRecordMaterial(
+    id: bigint,
+    materialId: bigint,
+    caller: RequestUser,
+    disposition: 'inline' | 'attachment',
+    type?: string,
+  ): Promise<StreamableFile> {
+    const appointment = await this.repository.findWithStudentById(id);
+    if (appointment === null) {
+      throw this.appointmentNotFound();
+    }
+    await this.assertAppointmentVisible(appointment, caller);
+
+    const record = await this.repository.findRecordRowByAppointmentId(id);
+    if (record === null) {
+      throw this.recordNotFound();
+    }
+    const material = await this.repository.findGuidanceMaterialById(
+      record.id,
+      materialId,
+    );
+    if (material === null) {
+      throw this.guidanceMaterialNotFound();
+    }
+    await this.fileService.assertOwnedBy(
+      material.fileId.toString(),
+      'Appointment',
+      id.toString(),
+    );
+    return this.fileService.serve(material.fileId, disposition, type);
   }
 
   /**

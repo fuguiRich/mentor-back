@@ -731,6 +731,56 @@ describe('指导记录填报 / 读取 (e2e)', () => {
     expect(data.code).toBe(ErrorCode.GUIDANCE_RECORD_NOT_FOUND);
     expect(data.message).toBe('指导记录不存在');
   });
+
+  it('导师记录列表：T001 看到自己的记录，T002 空，S001 403', async () => {
+    const appointment = await createAppointment();
+    await createRecord(appointment.id);
+
+    const response = await api('T001')
+      .get('/mentor/records?page=1&pageSize=100')
+      .expect(200);
+    const data = (
+      response.body as ResponseEnvelope<{
+        list: Array<{
+          appointmentId: string;
+          studentName: string;
+          studentLogin: string;
+        }>;
+        total: number;
+      }>
+    ).data;
+    expect(data.total).toBeGreaterThanOrEqual(1);
+    expect(
+      data.list.find(
+        (item) => item.appointmentId === appointment.id.toString(),
+      ),
+    ).toMatchObject({
+      appointmentId: appointment.id.toString(),
+      studentName: 'S001',
+      studentLogin: 'S001',
+    });
+
+    const other = await api('T002')
+      .get('/mentor/records?page=1&pageSize=10')
+      .expect(200);
+    expect((other.body as ResponseEnvelope<{ total: number }>).data.total).toBe(
+      0,
+    );
+
+    await api('S001').get('/mentor/records').expect(403);
+  });
+
+  it('导师记录导出：CSV 含表头与学生', async () => {
+    const appointment = await createAppointment();
+    await createRecord(appointment.id);
+
+    const response = await api('T001')
+      .get('/mentor/records/export')
+      .expect(200);
+    expect(response.headers['content-type']).toContain('text/csv');
+    expect(response.text).toContain('预约ID');
+    expect(response.text).toContain('S001');
+  });
 });
 
 /**

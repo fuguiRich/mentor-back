@@ -111,8 +111,12 @@ export class MentorApplicationService {
     if (application === null) {
       throw this.applicationNotFound();
     }
-    const scope = await this.resolveScope(caller);
-    this.assertApplicantVisible(scope, application);
+    // 申请人本人永远可读自己的申请（self 数据范围在 assertDeptVisible
+    // 里没有 deptIds，直接走它会 403——前端实测过的契约 bug）。
+    if (!(await this.isApplicant(caller, application))) {
+      const scope = await this.resolveScope(caller);
+      this.assertApplicantVisible(scope, application);
+    }
     return toMentorApplicationResponse(application);
   }
 
@@ -338,6 +342,18 @@ export class MentorApplicationService {
    * `applicant.orgUnit.deptId`。申请人没有部门投影时只有 `{kind:'all'}` 看得见
    * （fail-closed，同 review.service 的同名判定）。
    */
+  private async isApplicant(
+    caller: RequestUser,
+    application: MentorApplicationWithApplicant,
+  ): Promise<boolean> {
+    const user = await this.users.findById(caller.userId);
+    if (user === null) {
+      return false;
+    }
+    const person = await this.repository.findPersonByLogin(user.username);
+    return person !== null && person.id === application.applicantId;
+  }
+
   private assertApplicantVisible(
     filter: DataScopeFilter,
     application: MentorApplicationWithApplicant,

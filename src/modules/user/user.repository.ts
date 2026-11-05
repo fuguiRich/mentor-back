@@ -85,6 +85,15 @@ export class UserRepository {
     return this.prisma.client.sysUser.findFirst({ where: { employeeNo } });
   }
 
+  /** 人员类型（SyncPerson.personType），用于 /auth/profile 提前判断内校/外校 */
+  async findPersonTypeByUsername(username: string): Promise<string | null> {
+    const person = await this.prisma.client.syncPerson.findFirst({
+      where: { login: username },
+      select: { personType: true },
+    });
+    return person?.personType ?? null;
+  }
+
   async findById(id: bigint): Promise<SysUser | null> {
     return this.prisma.client.sysUser.findFirst({ where: { id } });
   }

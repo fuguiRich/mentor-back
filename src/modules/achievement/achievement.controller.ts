@@ -9,6 +9,7 @@ import {
   Patch,
   Post,
   Query,
+  type StreamableFile,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -18,10 +19,12 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiProduces,
   ApiTags,
 } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { DataScope } from '../../common/decorators/data-scope.decorator';
+import { NoEnvelope } from '../../common/decorators/no-envelope.decorator';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { ErrorCode } from '../../common/constants/error-code';
 import { errExample, errExamples } from '../../common/dto/err-example';
@@ -137,6 +140,58 @@ export class AchievementController {
     @CurrentUser() caller: RequestUser,
   ): Promise<AchievementListResponseDto> {
     return this.achievementService.list(BigInt(params.mentorId), query, caller);
+  }
+
+  @Get(':mentorId/achievements/:achievementId/proof/preview')
+  @NoEnvelope()
+  @RequirePermission('achievement:list')
+  @DataScope('all')
+  @ApiOperation({
+    summary: '行内预览成果佐证',
+    description:
+      '可见性同成果列表：导师本人 / 数据范围覆盖导师部门的管理员。' +
+      '返回文件字节流，不是 JSON；没有佐证或文件已清理 → 404 / 28101。',
+  })
+  @ApiProduces(
+    'image/png',
+    'image/jpeg',
+    'image/gif',
+    'image/webp',
+    'image/bmp',
+    'application/pdf',
+    'application/octet-stream',
+  )
+  @ApiOkResponse({ description: '返回文件字节流（不是 JSON）' })
+  async previewProof(
+    @Param() params: MentorAchievementItemParamDto,
+    @CurrentUser() caller: RequestUser,
+  ): Promise<StreamableFile> {
+    return this.achievementService.previewProof(
+      BigInt(params.mentorId),
+      BigInt(params.achievementId),
+      caller,
+    );
+  }
+
+  @Get(':mentorId/achievements/:achievementId/proof/download')
+  @NoEnvelope()
+  @RequirePermission('achievement:list')
+  @DataScope('all')
+  @ApiOperation({
+    summary: '下载成果佐证',
+    description: '可见性同预览；Content-Disposition: attachment。',
+  })
+  @ApiProduces('application/octet-stream')
+  @ApiOkResponse({ description: '返回文件字节流（不是 JSON）' })
+  async downloadProof(
+    @Param() params: MentorAchievementItemParamDto,
+    @CurrentUser() caller: RequestUser,
+  ): Promise<StreamableFile> {
+    return this.achievementService.downloadProof(
+      BigInt(params.mentorId),
+      BigInt(params.achievementId),
+      caller,
+    );
   }
 
   @Patch(':mentorId/achievements/:achievementId')

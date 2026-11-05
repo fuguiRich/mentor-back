@@ -8,6 +8,7 @@ import {
   Param,
   Post,
   Query,
+  type StreamableFile,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -18,9 +19,11 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiProduces,
   ApiTags,
 } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { NoEnvelope } from '../../common/decorators/no-envelope.decorator';
 import { DataScope } from '../../common/decorators/data-scope.decorator';
 import type { RequestUser } from '../../common/context/request-context';
 import { ErrorCode } from '../../common/constants/error-code';
@@ -55,7 +58,7 @@ import {
 } from './dto/appointment-material.dto';
 
 /**
- * 预约（Task 23 / 24 / 25 / 26 / 27 / 28 / 29 / 30）——本模块**恰好 17 条路由**：
+ * 预约（Task 23 / 24 / 25 / 26 / 27 / 28 / 29 / 30）——本模块**恰好 21 条路由**：
  *
  * - `POST /appointments`（学生发起，`appointment:create`）；
  * - `POST /appointments/:id/confirm`、`/reject`、`/reschedule`（导师处理，
@@ -70,6 +73,10 @@ import {
  * - `POST /appointments/:id/materials`（学生挂预约材料，`appointment:create`）；
  * - `POST /appointments/:id/record/materials`（导师挂过程材料，`appointment:handle`）；
  * - `GET /appointments/:id/materials`（一次列出两类材料，`appointment:list`）；
+ * - `GET /appointments/:id/materials/:materialId/preview|download`（预览 / 下载
+ *   预约材料，`appointment:list`，可见性同材料列表）；
+ * - `GET /appointments/:id/record/materials/:materialId/preview|download`
+ *   （预览 / 下载过程材料，`appointment:list`，可见性同材料列表）；
  * - `DELETE /appointments/:id/materials/:materialId`（学生摘**预约材料**，
  *   `appointment:create`）；
  * - `DELETE /appointments/:id/record/materials/:materialId`（导师摘**过程材料**，
@@ -864,6 +871,108 @@ export class AppointmentController {
     @CurrentUser() caller: RequestUser,
   ): Promise<AppointmentMaterialListResponseDto> {
     return this.appointmentService.listMaterials(BigInt(params.id), caller);
+  }
+
+  @Get(':id/materials/:materialId/preview')
+  @NoEnvelope()
+  @RequirePermission('appointment:list')
+  @DataScope('all')
+  @ApiOperation({
+    summary: '行内预览预约材料（学生上传）',
+    description:
+      '可见性同 GET /appointments/:id/materials：申请人本人 / 该预约导师本人 / ' +
+      '数据范围覆盖申请人部门的管理员。返回文件字节流，不是 JSON。',
+  })
+  @ApiProduces(
+    'image/png',
+    'image/jpeg',
+    'image/gif',
+    'image/webp',
+    'image/bmp',
+    'application/pdf',
+    'application/octet-stream',
+  )
+  @ApiOkResponse({ description: '返回文件字节流（不是 JSON）' })
+  async previewAppointmentMaterial(
+    @Param() params: AppointmentMaterialItemParamDto,
+    @CurrentUser() caller: RequestUser,
+  ): Promise<StreamableFile> {
+    return this.appointmentService.previewAppointmentMaterial(
+      BigInt(params.id),
+      BigInt(params.materialId),
+      caller,
+    );
+  }
+
+  @Get(':id/materials/:materialId/download')
+  @NoEnvelope()
+  @RequirePermission('appointment:list')
+  @DataScope('all')
+  @ApiOperation({
+    summary: '下载预约材料（学生上传）',
+    description: '可见性同预览；Content-Disposition: attachment。',
+  })
+  @ApiProduces('application/octet-stream')
+  @ApiOkResponse({ description: '返回文件字节流（不是 JSON）' })
+  async downloadAppointmentMaterial(
+    @Param() params: AppointmentMaterialItemParamDto,
+    @CurrentUser() caller: RequestUser,
+  ): Promise<StreamableFile> {
+    return this.appointmentService.downloadAppointmentMaterial(
+      BigInt(params.id),
+      BigInt(params.materialId),
+      caller,
+    );
+  }
+
+  @Get(':id/record/materials/:materialId/preview')
+  @NoEnvelope()
+  @RequirePermission('appointment:list')
+  @DataScope('all')
+  @ApiOperation({
+    summary: '行内预览过程材料（导师上传）',
+    description: '可见性同预约材料；返回文件字节流，不是 JSON。',
+  })
+  @ApiProduces(
+    'image/png',
+    'image/jpeg',
+    'image/gif',
+    'image/webp',
+    'image/bmp',
+    'application/pdf',
+    'application/octet-stream',
+  )
+  @ApiOkResponse({ description: '返回文件字节流（不是 JSON）' })
+  async previewRecordMaterial(
+    @Param() params: AppointmentMaterialItemParamDto,
+    @CurrentUser() caller: RequestUser,
+  ): Promise<StreamableFile> {
+    return this.appointmentService.previewRecordMaterial(
+      BigInt(params.id),
+      BigInt(params.materialId),
+      caller,
+    );
+  }
+
+  @Get(':id/record/materials/:materialId/download')
+  @NoEnvelope()
+  @RequirePermission('appointment:list')
+  @DataScope('all')
+  @ApiOperation({
+    summary: '下载过程材料（导师上传）',
+    description: '可见性同预览；Content-Disposition: attachment。',
+  })
+  @ApiProduces('application/octet-stream')
+  @ApiOkResponse({ description: '返回文件字节流（不是 JSON）' })
+  async downloadRecordMaterial(
+    @Param() params: AppointmentMaterialItemParamDto,
+    @CurrentUser() caller: RequestUser,
+  ): Promise<StreamableFile> {
+    return this.appointmentService.downloadRecordMaterial(
+      BigInt(params.id),
+      BigInt(params.materialId),
+      caller,
+    );
   }
 
   @Delete(':id/materials/:materialId')

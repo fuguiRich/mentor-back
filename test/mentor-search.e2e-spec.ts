@@ -796,9 +796,9 @@ describe('导师检索（学生侧）(e2e)', () => {
     }
   });
 
-  // ── 判据 15：检索面恰好 5 条路径 / 7 个操作 ──────────────────────
+  // ── 判据 15：检索面恰好 7 条路径 / 9 个操作 ──────────────────────
 
-  it('判据 15：检索面恰好 5 条路径 / 7 个操作（docs:gen 总数由门槛命令核）', () => {
+  it('判据 15：检索面恰好 7 条路径 / 9 个操作（docs:gen 总数由门槛命令核）', () => {
     const document = buildDocument(app);
     const paths = document.paths as Record<string, Record<string, unknown>>;
     const searchPaths = Object.keys(paths).filter((path) =>
@@ -814,6 +814,8 @@ describe('导师检索（学生侧）(e2e)', () => {
       '/mentors/{id}',
       '/mentors/{mentorId}/achievements',
       '/mentors/{mentorId}/achievements/{achievementId}',
+      '/mentors/{mentorId}/achievements/{achievementId}/proof/download',
+      '/mentors/{mentorId}/achievements/{achievementId}/proof/preview',
       '/mentors/{mentorId}/reviews',
     ]);
     const operations = searchPaths.reduce(
@@ -824,8 +826,9 @@ describe('导师检索（学生侧）(e2e)', () => {
         ).length,
       0,
     );
-    // 2（检索）+ 1（评价）+ 2（成果 post/get）+ 2（成果 patch/delete）= 7
-    expect(operations).toBe(7);
+    // 2（检索）+ 1（评价）+ 2（成果 post/get）+ 2（成果 patch/delete）
+    // + 2（佐证预览/下载）= 9
+    expect(operations).toBe(9);
   });
 });
 

@@ -204,6 +204,10 @@ describe('导师佐证材料 (e2e)', () => {
     files.set('A3app', await upload('mentor-a', '退回可挂.png', PNG, 'A3'));
     files.set('B1', await upload('mentor-b', '别人的.png', PNG, 'B'));
     files.set('noOwner', await upload('mentor-a', '无归属.png', PNG));
+    files.set(
+      'noOwnerOther',
+      await upload('mentor-b', '别人的无归属.png', PNG),
+    );
 
     // B 的申请上挂一行材料：判据 12 / 13 要拿它验越权读
     const attachedB = await api('mentor-b')
@@ -532,15 +536,21 @@ describe('导师佐证材料 (e2e)', () => {
     expect(await materialCount('A1')).toBe(3);
   });
 
-  it('判据 6：把无归属的文件挂到本申请 → 404 / 28101（fail-closed），无行落库', async () => {
+  it('判据 6：本人上传的无归属文件（草稿上传）→ 201 并认领给本申请', async () => {
     const response = await api('mentor-a')
-      .post(`/mentor-applications/${appId('A1')}/materials`)
+      .post(`/mentor-applications/${appId('A3')}/materials`)
       .send({ fileId: fileId('noOwner'), kind: 1 })
-      .expect(404);
-    const body = response.body as ResponseEnvelope<null>;
-    expect(body.code).toBe(ErrorCode.FILE_NOT_FOUND);
-    expect(body.message).toBe('文件不存在');
-    expect(await materialCount('A1')).toBe(3);
+      .expect(201);
+    expect(
+      (response.body as ResponseEnvelope<MaterialResponseDto>).data.fileId,
+    ).toBe(fileId('noOwner'));
+    expect(await materialCount('A3')).toBe(1);
+
+    const file = await prisma.client.sysFile.findFirst({
+      where: { id: BigInt(fileId('noOwner')) },
+    });
+    expect(file?.ownerType).toBe('MentorApplication');
+    expect(file?.ownerId).toBe(appId('A3'));
   });
 
   it('判据 7：无归属 / 归属不符 / 文件不存在 三者响应码与文案逐字相同', async () => {
@@ -549,7 +559,7 @@ describe('导师佐证材料 (e2e)', () => {
       kind: 1,
     });
     const noOwner = await errorBody('mentor-a', 'A1', {
-      fileId: fileId('noOwner'),
+      fileId: fileId('noOwnerOther'),
       kind: 1,
     });
     const wrongOwner = await errorBody('mentor-a', 'A1', {
@@ -636,7 +646,8 @@ describe('导师佐证材料 (e2e)', () => {
     expect(
       (response.body as ResponseEnvelope<MaterialResponseDto>).data.kind,
     ).toBe(2);
-    expect(await materialCount('A3')).toBe(1);
+    // 判据 6 已给 A3 认领了一条无归属文件，这里再挂一条 → 2
+    expect(await materialCount('A3')).toBe(2);
   });
 
   // ── 判据 11 ───────────────────────────────────────────────────────

@@ -10,6 +10,7 @@ import type {
   AchievementListResponseDto,
   AchievementResponseDto,
 } from '../src/modules/achievement/dto/achievement-response.dto';
+import type { FileResponseDto } from '../src/modules/file/dto/file-response.dto';
 import {
   authedAgent,
   clearBusinessTables,
@@ -21,6 +22,9 @@ import {
 } from './e2e-helpers';
 
 const SYNCED_AT = new Date('2026-10-27T00:00:00.000Z');
+
+/** 合法 PDF 头 */
+const PDF = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34]);
 
 /**
  * 双创成果登记接口（P3 Task 36）。
@@ -115,6 +119,8 @@ describe('双创成果登记（P3 Task 36）(e2e)', () => {
     const mentorRole = await createRole('导师', 'ach_mentor', 'self', [
       'achievement:manage',
       'achievement:list',
+      // 判据 1b 需要先 POST /files 传佐证
+      'file:create',
     ]);
     const collegeRole = await createRole(
       '成果学院管理员',
@@ -285,6 +291,40 @@ describe('双创成果登记（P3 Task 36）(e2e)', () => {
     });
   });
 
+  it('判据 1b：成果佐证可预览下载，其他导师 403', async () => {
+    const upload = await api('ach-mentor-a')
+      .post('/files')
+      .attach('files', PDF, {
+        filename: '获奖证书.pdf',
+        contentType: 'application/octet-stream',
+      })
+      .expect(201);
+    const file = (upload.body as ResponseEnvelope<FileResponseDto[]>).data[0];
+
+    const created = await api('ach-mentor-a')
+      .post(`/mentors/${mentorAId.toString()}/achievements`)
+      .send(body({ proofFileId: file.id }))
+      .expect(201);
+    const achievementId = (
+      created.body as ResponseEnvelope<AchievementResponseDto>
+    ).data.id;
+
+    const base = `/mentors/${mentorAId.toString()}/achievements/${achievementId}/proof`;
+    const preview = await api('ach-mentor-a')
+      .get(`${base}/preview`)
+      .expect(200);
+    expect(preview.headers['content-disposition']).toContain('inline');
+    expect(preview.body).toEqual(PDF);
+
+    const download = await api('ach-mentor-a')
+      .get(`${base}/download`)
+      .expect(200);
+    expect(download.headers['content-disposition']).toContain('attachment');
+    expect(download.body).toEqual(PDF);
+
+    await api('ach-mentor-b').get(`${base}/preview`).expect(403);
+  });
+
   it('判据 2：登记到别人的档案 → 404 / 31102（不是 403，藏存在性）', async () => {
     const response = await api('ach-mentor-a')
       .post(`/mentors/${mentorBId.toString()}/achievements`)
@@ -361,9 +401,10 @@ describe('双创成果登记（P3 Task 36）(e2e)', () => {
       .expect(200);
     const allData = (all.body as ResponseEnvelope<AchievementListResponseDto>)
       .data;
-    // 判据 1 的一条 + 判据 4 的一条 + 本条的 2025 一条
-    expect(allData.total).toBe(3);
+    // 判据 1 的一条 + 判据 1b 的一条 + 判据 4 的一条 + 本条的 2025 一条
+    expect(allData.total).toBe(4);
     expect(allData.list.map((item) => item.awardedAt)).toEqual([
+      '2026-09-15',
       '2026-09-15',
       '2026-09-15',
       '2025-03-01',
@@ -376,7 +417,7 @@ describe('双创成果登记（P3 Task 36）(e2e)', () => {
     const y2026Data = (
       y2026.body as ResponseEnvelope<AchievementListResponseDto>
     ).data;
-    expect(y2026Data.total).toBe(2);
+    expect(y2026Data.total).toBe(3);
     expect(
       y2026Data.list.every((item) => item.awardedAt.startsWith('2026-')),
     ).toBe(true);
@@ -388,7 +429,7 @@ describe('双创成果登记（P3 Task 36）(e2e)', () => {
     expect(
       (onlyType1.body as ResponseEnvelope<AchievementListResponseDto>).data
         .total,
-    ).toBe(2);
+    ).toBe(3);
   });
 
   it('判据 7：DELETE 是软删——列表消失，库里仍有行', async () => {
