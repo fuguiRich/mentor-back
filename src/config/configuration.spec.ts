@@ -134,6 +134,7 @@ describe('configuration sso login/sync', () => {
       expect(cfg.sso.loginEnabled).toBe(false);
       expect(cfg.sso.syncEnabled).toBe(false);
       expect(cfg.sso.openApiTimeoutMs).toBe(10000);
+      expect(cfg.sso.syncStudentsEnabled).toBe(true);
     });
   });
 

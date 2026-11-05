@@ -52,6 +52,8 @@ export interface AppConfig {
     fallbackOn5xx: boolean;
     caCertPath: string;
     syncEnabled: boolean;
+    /** 是否同步学生。缺 edu:classes 能力键时置 false，先只同步组织+教师 */
+    syncStudentsEnabled: boolean;
     openApiPrefix: string;
     syncIntervalSeconds: number;
     syncFullIntervalSeconds: number;
@@ -180,6 +182,7 @@ export default (): AppConfig => {
       fallbackOn5xx: parseBool(env.SSO_FALLBACK_ON_5XX, false),
       caCertPath: env.SSO_CA_CERT_PATH ?? '',
       syncEnabled: parseBool(env.SSO_SYNC_ENABLED, false),
+      syncStudentsEnabled: parseBool(env.SSO_SYNC_STUDENTS_ENABLED, true),
       openApiPrefix: env.SSO_OPENAPI_PREFIX ?? '/api',
       syncIntervalSeconds: Number(env.SSO_SYNC_INTERVAL_SECONDS || 21600),
       syncFullIntervalSeconds: Number(

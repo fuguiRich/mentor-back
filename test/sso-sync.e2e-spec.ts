@@ -146,12 +146,13 @@ describe('SSO 定时同步 (e2e)', () => {
       'sso.apiLoginTimeoutMs': 1000,
       'sso.openApiTimeoutMs': 1000,
       'sso.caCertPath': '',
+      'sso.syncStudentsEnabled': true,
     };
     const config = {
       get: (key: string) => values[key],
       getOrThrow: (key: string) => values[key],
     } as unknown as ConfigService<AppConfig, true>;
-    return new SsoSyncSource(new SsoOpenApiClient(config, fetchImpl));
+    return new SsoSyncSource(new SsoOpenApiClient(config, fetchImpl), config);
   }
 
   function defaultFetch(): typeof fetch {

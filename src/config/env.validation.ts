@@ -71,6 +71,7 @@ export function validateEnv(
   for (const key of [
     'SSO_LOGIN_ENABLED',
     'SSO_SYNC_ENABLED',
+    'SSO_SYNC_STUDENTS_ENABLED',
     'SSO_FALLBACK_ENABLED',
     'SSO_FALLBACK_ON_5XX',
   ] as const) {

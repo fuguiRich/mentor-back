@@ -1,4 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import type { AppConfig } from '../../../config/configuration';
 import type {
   SyncOrgUnitRow,
   SyncPersonRow,
@@ -31,7 +33,10 @@ export class SsoSyncSource implements SyncSource {
 
   private readonly logger = new Logger(SsoSyncSource.name);
 
-  constructor(private readonly client: SsoOpenApiClient) {}
+  constructor(
+    private readonly client: SsoOpenApiClient,
+    private readonly config: ConfigService<AppConfig, true>,
+  ) {}
 
   async fetchOrgUnits(_since: Date | null): Promise<SyncOrgUnitRow[]> {
     const tree = await this.client.getOrgDepartments();
@@ -71,16 +76,31 @@ export class SsoSyncSource implements SyncSource {
     };
     indexDept(orgTree);
 
-    const classes = await this.client.getClasses();
-    const classMap = new Map(
-      classes.map((item) => [
-        item.class_name,
-        { collegeName: item.college_name, major: item.major_name ?? null },
-      ]),
-    );
+    const studentsEnabled = this.config.getOrThrow('sso.syncStudentsEnabled', {
+      infer: true,
+    });
+    const classMap = new Map<
+      string,
+      { collegeName: string; major: string | null }
+    >();
+    if (studentsEnabled) {
+      const classes = await this.client.getClasses();
+      for (const item of classes) {
+        classMap.set(item.class_name, {
+          collegeName: item.college_name,
+          major: item.major_name ?? null,
+        });
+      }
+    } else {
+      this.logger.warn(
+        'SSO_SYNC_STUDENTS_ENABLED=false：本次只同步组织与教师，学生跳过',
+      );
+    }
 
     const teachers = await this.client.getTeachers(since);
-    const students = await this.client.getStudents(since);
+    const students = studentsEnabled
+      ? await this.client.getStudents(since)
+      : [];
 
     const rows: SyncPersonRow[] = teachers.map((teacher) => ({
       login: teacher.workId,
