@@ -62,7 +62,12 @@ export function classifySsoFailure(input: {
     return 'invalid';
   }
 
-  if (msg.includes('账号或密码错误')) {
+  // 文档示例写「账号或密码错误」，真实 SSO 返回「用户名或密码错误」——
+  // 两种都要认，否则会把凭据拒绝误判成 invalid（20111）。
+  if (
+    msg.includes('账号或密码错误') ||
+    msg.includes('用户名或密码错误')
+  ) {
     return 'credentials';
   }
   if (msg.includes('账号已被锁定')) {

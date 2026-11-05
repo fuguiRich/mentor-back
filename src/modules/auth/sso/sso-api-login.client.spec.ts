@@ -24,6 +24,15 @@ describe('classifySsoFailure', () => {
     ).toBe('credentials');
   });
 
+  it('真实 SSO 文案「用户名或密码错误」也 → credentials', () => {
+    expect(
+      classifySsoFailure({
+        httpStatus: 200,
+        body: { code: 500, msg: '用户名或密码错误' },
+      }),
+    ).toBe('credentials');
+  });
+
   it('账号已被锁定 → locked', () => {
     expect(
       classifySsoFailure({
