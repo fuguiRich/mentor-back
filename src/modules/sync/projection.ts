@@ -139,6 +139,16 @@ export class ProjectionWriter {
     });
   }
 
+  /** 同级同名部门。同步投影遇到本地已有同名部门时复用它，避免撞唯一键 */
+  async findDeptByParentAndName(
+    parentId: bigint | null,
+    name: string,
+  ): Promise<SysDept | null> {
+    return this.prisma.client.sysDept.findFirst({
+      where: { parentId, name, deletedAt: null },
+    });
+  }
+
   /**
    * 只写密码哈希，**不 revoke 会话**。登录成功时同步 SSO 密码用它；
    * 本人改密 / 管理员重置仍走 `UserService` 那条会踢人的路径。

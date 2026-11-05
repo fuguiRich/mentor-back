@@ -29,6 +29,11 @@ export class SyncOrgRepository {
     return this.prisma.client.syncOrgUnit.findFirst({ where: { id } });
   }
 
+  /** 按投影出的 SysDept.id 反查：判断某个本地部门是否已被别的同步行占用 */
+  async findByDeptId(deptId: bigint): Promise<SyncOrgUnit | null> {
+    return this.prisma.client.syncOrgUnit.findFirst({ where: { deptId } });
+  }
+
   /**
    * 全量跑时列出**未删**的行，用来认「批里没有 = 源系统删了」。
    * 走 `client`（过滤 `deleted_at`）：已经软删的行不能被再判一次删除。

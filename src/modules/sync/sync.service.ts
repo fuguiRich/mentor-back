@@ -411,6 +411,28 @@ export class SyncService {
     }
 
     if (existing === null) {
+      // 本地已有同级同名部门（演示数据 / 历史数据）时复用，避免撞
+      // sys_dept 的 (parent_id, name_active) 唯一键。
+      const sibling = await this.projection.findDeptByParentAndName(
+        desired.parentId,
+        desired.name,
+      );
+      if (sibling !== null) {
+        const linked = await this.orgs.findByDeptId(sibling.id);
+        if (linked === null || linked.id === current.id) {
+          current = await this.orgs.linkDept(current, sibling.id);
+          byCode.set(row.code, current);
+          return null;
+        }
+        // 已被别的同步行占用：换一个本地名，不能把两个源部门并成一个
+        const dept = await this.projection.createDept({
+          ...desired,
+          name: `${desired.name}（${row.code}）`,
+        });
+        current = await this.orgs.linkDept(current, dept.id);
+        byCode.set(row.code, current);
+        return null;
+      }
       const dept = await this.projection.createDept(desired);
       current = await this.orgs.linkDept(current, dept.id);
     } else {

@@ -190,8 +190,23 @@ describe('SSO 定时同步 (e2e)', () => {
     });
   }
 
-  it('全量同步：组织/教师/学生落库，根部门复用', async () => {
+  it('全量同步：组织/教师/学生落库，根部门复用，同级同名部门复用', async () => {
     await reset();
+
+    // 本地已有一个同级同名部门：同步应复用它，而不是撞唯一键失败
+    const root = await prisma.client.sysDept.findFirst({
+      where: { parentId: null },
+    });
+    const localCollege = await prisma.client.sysDept.create({
+      data: {
+        parentId: root?.id ?? null,
+        name: '计算机学院',
+        sortOrder: 0,
+        status: 1,
+        createdBy: 0n,
+        updatedBy: 0n,
+      },
+    });
 
     const result = await sync.runOnce(makeSource(defaultFetch()), {
       mode: 'full',
@@ -213,7 +228,11 @@ describe('SSO 定时同步 (e2e)', () => {
     const college = await prisma.client.sysDept.findFirst({
       where: { name: '计算机学院' },
     });
+    expect(college?.id).toBe(localCollege.id);
     expect(college?.parentId).toBe(roots[0].id);
+    expect(
+      await prisma.client.sysDept.count({ where: { name: '计算机学院' } }),
+    ).toBe(1);
 
     const teacher = await prisma.client.sysUser.findFirst({
       where: { username: 'T1' },
