@@ -9,6 +9,7 @@ import { runWithSyncWrite } from '../src/infra/prisma/sync-write-scope';
 import { RedisService } from '../src/infra/redis/redis.service';
 import { SsoOpenApiClient } from '../src/modules/sync/sso/sso-open-api.client';
 import { SsoSyncSource } from '../src/modules/sync/sso/sso-sync.source';
+import { SyncRunRepository } from '../src/modules/sync/sync-run.repository';
 import { SyncService } from '../src/modules/sync/sync.service';
 import { SyncRunStatus } from '../src/modules/sync/sync.constants';
 import { clearBusinessTables, clearRedisKeys } from './e2e-helpers';
@@ -484,5 +485,105 @@ describe('SSO 定时同步 (e2e)', () => {
     expect(seen).toHaveLength(1);
     expect(seen[0]).not.toBeNull();
     expect(Number.isInteger(Number(seen[0]))).toBe(true);
+  });
+  it('PARTIAL 全量也算完成的全量，调度器不会每次退全量', async () => {
+    await reset();
+
+    const partialFetch = fakeFetch((url) => {
+      if (url.pathname.endsWith('/auth/token')) {
+        return json({ code: 200, token: 't', expiresIn: 300 });
+      }
+      if (url.pathname.endsWith('/open/org/departments')) {
+        return json({ code: 200, total: 1, items: ORG_TREE });
+      }
+      if (url.pathname.endsWith('/open/edu/classes')) {
+        return json({ code: 200, total: 1, items: CLASSES });
+      }
+      if (url.pathname.endsWith('/data/teachers')) {
+        return json({
+          code: 200,
+          total: 1,
+          page: 1,
+          pageSize: 200,
+          totalPages: 1,
+          items: [
+            { workId: 'T9', name: '无部门教师', organization: '不存在学院' },
+          ],
+        });
+      }
+      if (url.pathname.endsWith('/data/students')) {
+        return json({
+          code: 200,
+          total: 0,
+          page: 1,
+          pageSize: 200,
+          totalPages: 0,
+          items: [],
+        });
+      }
+      return json({ code: 404, msg: 'not found' }, 404);
+    });
+
+    const result = await sync.runOnce(makeSource(partialFetch), {
+      mode: 'full',
+    });
+    expect(result.status).toBe(SyncRunStatus.PARTIAL);
+
+    const runs = app.get(SyncRunRepository);
+    expect(await runs.findLastFinishedByMode('sso', 'full')).not.toBeNull();
+  });
+  it('本地同名部门已被别的同步行占用 → 新建带后缀部门，后续同步保持稳定', async () => {
+    await reset();
+
+    const root = await prisma.client.sysDept.findFirst({
+      where: { parentId: null },
+    });
+    const localCollege = await prisma.client.sysDept.create({
+      data: {
+        parentId: root?.id ?? null,
+        name: '计算机学院',
+        sortOrder: 0,
+        status: 1,
+        createdBy: 0n,
+        updatedBy: 0n,
+      },
+    });
+    await runWithSyncWrite(() =>
+      prisma.client.syncOrgUnit.create({
+        data: {
+          code: 'DEMO-CS',
+          name: '计算机学院',
+          parentId: null,
+          kind: 'college',
+          syncedAt: new Date(),
+          syncRunId: null,
+          deptId: localCollege.id,
+          createdBy: 0n,
+          updatedBy: 0n,
+        },
+      }),
+    );
+
+    const first = await sync.runOnce(makeSource(defaultFetch()), {
+      mode: 'full',
+    });
+    expect(first.status).toBe(SyncRunStatus.OK);
+
+    const suffixed = await prisma.client.sysDept.findFirst({
+      where: { name: '计算机学院（sso:10）' },
+    });
+    expect(suffixed).not.toBeNull();
+
+    const second = await sync.runOnce(makeSource(defaultFetch()), {
+      mode: 'full',
+    });
+    expect(second.status).toBe(SyncRunStatus.OK);
+    expect(
+      (
+        await prisma.client.sysDept.findFirst({
+          where: { id: suffixed?.id },
+        })
+      )?.name,
+    ).toBe('计算机学院（sso:10）');
   });
 });

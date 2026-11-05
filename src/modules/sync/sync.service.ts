@@ -436,7 +436,17 @@ export class SyncService {
       const dept = await this.projection.createDept(desired);
       current = await this.orgs.linkDept(current, dept.id);
     } else {
-      await this.projection.updateDept(existing, desired);
+      // 之前因为同名冲突被加了后缀的本地部门，后续同步不能把名字改回源名——
+      // 那会再次撞上 (parent_id, name_active) 唯一键。保留已有本地名。
+      const sibling = await this.projection.findDeptByParentAndName(
+        desired.parentId,
+        desired.name,
+      );
+      const name =
+        sibling !== null && sibling.id !== existing.id
+          ? existing.name
+          : desired.name;
+      await this.projection.updateDept(existing, { ...desired, name });
       current = await this.orgs.linkDept(current, existing.id);
     }
     // 刷新这一趟的 `code → 行` 表：后面的子行要读它刚拿到的 `deptId`。

@@ -103,7 +103,12 @@ export class SyncRunRepository {
     return run?.startedAt ?? null;
   }
 
-  /** 最近一次成功的全量跑；调度器用它决定这次跑全量还是增量 */
+  /**
+   * 最近一次**跑完**的全量（OK 或 PARTIAL）；调度器用它决定这次跑全量还是增量。
+   *
+   * PARTIAL 也算：一行永久 `org_not_found` / 源里重名的人不该让调度器每次都退全量。
+   * 真正的失败行由下一次全量重试；FAILED（拉数失败）不算完成。
+   */
   async findLastFinishedByMode(
     source: string,
     mode: 'incremental' | 'full',
@@ -112,7 +117,7 @@ export class SyncRunRepository {
       where: {
         source,
         mode,
-        status: SyncRunStatus.OK,
+        status: { in: [SyncRunStatus.OK, SyncRunStatus.PARTIAL] },
         finishedAt: { not: null },
       },
       orderBy: { finishedAt: 'desc' },
