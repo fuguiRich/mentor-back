@@ -165,6 +165,8 @@ interface Harness {
   findPersonByLogin: jest.Mock;
   applyTransition: jest.Mock;
   userFindById: jest.Mock;
+  resolveRoleGrant: jest.Mock;
+  clearPermissionCache: jest.Mock;
   resolveScope: jest.Mock;
   assertDeptVisible: jest.Mock;
   opLogRecord: jest.Mock;
@@ -182,6 +184,8 @@ function buildService(
     raceMiss?: boolean;
     /** landing.writeProfile 读旧值用的档案行（type=2 的 6 APPROVED 留痕） */
     profileBefore?: MentorProfile | null;
+    /** 审核通过时解析到的角色授权 */
+    roleGrant?: { userId: bigint; roleId: bigint } | null;
   } = {},
 ): Harness {
   const application = options.application ?? applicationDetail();
@@ -246,6 +250,10 @@ function buildService(
           : options.user,
       ),
     );
+  const clearPermissionCache = jest.fn().mockResolvedValue(undefined);
+  const resolveRoleGrant = jest
+    .fn()
+    .mockImplementation(() => Promise.resolve(options.roleGrant ?? null));
   const resolveScope = jest
     .fn()
     .mockImplementation((): Promise<DataScopeFilter> =>
@@ -262,7 +270,11 @@ function buildService(
       findPersonByLogin,
       applyTransition,
     } as unknown as MentorApplicationRepository,
-    { findById: userFindById } as unknown as UserService,
+    {
+      findById: userFindById,
+      resolveRoleGrant,
+      clearPermissionCache,
+    } as unknown as UserService,
     {
       resolve: resolveScope,
       assertDeptVisible,
@@ -282,6 +294,8 @@ function buildService(
     findPersonByLogin,
     applyTransition,
     userFindById,
+    resolveRoleGrant,
+    clearPermissionCache,
     resolveScope,
     assertDeptVisible,
     opLogRecord,
@@ -601,6 +615,26 @@ describe('ReviewService 状态机（14 组：[1]–[10] 合法边 + [D1]–[D4] 
       decision: 'reject',
       comment: '研究方向不符，退回二级学院重审',
     });
+  });
+
+  it('ONBOARD 通过时把 mentor 角色授权带进同一事务', async () => {
+    const grant = { userId: 9n, roleId: 8n };
+    const h = buildService({
+      application: applicationDetail({ status: 4 }),
+      roleGrant: grant,
+    });
+
+    await h.service.scReview(
+      1n,
+      decisionDto('approve', '同意入驻'),
+      caller(),
+      META,
+    );
+
+    expect(h.applyTransition).toHaveBeenCalledWith(
+      expect.objectContaining({ grantRole: grant }),
+    );
+    expect(h.clearPermissionCache).toHaveBeenCalledWith(9n);
   });
 
   it('[8] 4 → sc approve → 6 APPROVED；档案 → 2 APPROVED。type=2 时档案回写恒 null（R59 显式分支）', async () => {

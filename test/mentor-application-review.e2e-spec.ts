@@ -156,7 +156,7 @@ describe('两级审核流 (e2e)', () => {
     // 四个角色：导师权限全走一份；三个审核者各持各的权限码 + 数据范围
     const mentorRole = await createRoleWithCodes(
       '审核流导师角色',
-      'ma_mentor',
+      'mentor',
       'self',
       [
         'mentor-application:submit',
@@ -474,6 +474,17 @@ describe('两级审核流 (e2e)', () => {
     // 落点 4（还在审）档案不动
     expect(((await readProfile('mentor-a1')) as MentorProfile).status).toBe(1);
 
+    // 模拟「教师只有 teacher 角色」：摘掉 mentor，审核通过后应由同一事务补回
+    const applicantUser = await prisma.client.sysUser.findFirst({
+      where: { username: 'mentor-a1' },
+    });
+    const mentorRole = await prisma.client.sysRole.findFirst({
+      where: { code: 'mentor' },
+    });
+    await prisma.client.sysUserRole.deleteMany({
+      where: { userId: applicantUser?.id, roleId: mentorRole?.id },
+    });
+
     const approve2 = await api('sc-admin')
       .post(`/mentor-applications/${a1App.id.toString()}/sc-review`)
       .send({ decision: 'approve', comment: '同意入驻' })
@@ -488,6 +499,13 @@ describe('两级审核流 (e2e)', () => {
     expect(row6.status).toBe(6);
     // 副作用表：落点 6 → MentorProfile.status = 2 APPROVED
     expect(((await readProfile('mentor-a1')) as MentorProfile).status).toBe(2);
+
+    // 审核通过 → mentor 角色由 applyTransition 同事务补回
+    expect(
+      await prisma.client.sysUserRole.findFirst({
+        where: { userId: applicantUser?.id, roleId: mentorRole?.id },
+      }),
+    ).not.toBeNull();
   });
 
   it('判据 2：退回路径 2 → college reject → 3；MentorProfile.status → 3；collegeReview.comment 非空', async () => {
@@ -963,14 +981,14 @@ describe('两级审核流 (e2e)', () => {
     // `/mentors/{mentorId}/reviews` 的 get）（65/87 → 67/90）；
     // P3 Task 36 的成果再加 2 路径 / 4 操作（67/90 → 69/94）
     // P4 的统计 / 导出 / 归档：85/112 → 88/118
-    // P5 的学期规则 / 消息 / 学生成果：88/118 → 99/131
+    // P5 的学期规则 / 消息 / 学生成果：88/118 → 100/133
     const paths = Object.keys(document.paths);
-    expect(paths).toHaveLength(99);
+    expect(paths).toHaveLength(100);
     let operations = 0;
     for (const path of paths) {
       operations += methodsOf(path).length;
     }
-    expect(operations).toBe(131);
+    expect(operations).toBe(133);
   });
 
   it('补 P2-A：deptAndChildren 的 college-admin-a 审外院申请 → 403 / 10003，申请行逐字不变', async () => {

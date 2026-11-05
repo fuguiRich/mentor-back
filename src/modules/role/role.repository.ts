@@ -35,6 +35,13 @@ export class RoleRepository {
     return this.prisma.client.sysRole.findFirst({ where: { id } });
   }
 
+  /** 按 code 找未软删的角色；审核流绑定 mentor 用 */
+  async findByCode(code: string): Promise<SysRole | null> {
+    return this.prisma.client.sysRole.findFirst({
+      where: { code, deletedAt: null },
+    });
+  }
+
   /** 角色编码全局唯一（uk_sys_role_code_active）；角色**名称**不唯一 */
   async existsByCode(code: string, excludeId?: bigint): Promise<boolean> {
     const found = await this.prisma.client.sysRole.findFirst({

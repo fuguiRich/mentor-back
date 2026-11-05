@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Logger,
   Post,
+  Put,
   Query,
 } from '@nestjs/common';
 import {
@@ -23,10 +24,14 @@ import { RedisService } from '../../infra/redis/redis.service';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { SyncRunRepository } from './sync-run.repository';
 import { SyncService } from './sync.service';
+import { SsoSyncScheduler } from './sso/sso-sync.scheduler';
 import { SsoSyncSource } from './sso/sso-sync.source';
+import { SyncSettingsService } from './sso/sync-settings.service';
 import { QuerySyncRunDto } from './dto/query-sync-run.dto';
 import { RunSyncDto } from './dto/run-sync.dto';
 import { SyncRunPageResponseDto } from './dto/sync-run-page-response.dto';
+import { SyncScheduleResponseDto } from './dto/sync-schedule-response.dto';
+import { UpdateSyncScheduleDto } from './dto/update-sync-schedule.dto';
 import { toSyncRunResponse } from './dto/sync-run-response.dto';
 
 @ApiTags('同步')
@@ -39,7 +44,46 @@ export class SyncController {
     private readonly source: SsoSyncSource,
     private readonly runs: SyncRunRepository,
     private readonly redis: RedisService,
+    private readonly settings: SyncSettingsService,
+    private readonly scheduler: SsoSyncScheduler,
   ) {}
+
+  @Get('schedule')
+  @RequirePermission('sync:manage')
+  @ApiOperation({
+    summary: '查看 SSO 定时同步设置与运行状态',
+    description:
+      '返回当前启停、间隔、是否同步学生、是否有任务在跑、下次触发时间和最近一条流水。',
+  })
+  @ApiOkResponse({ type: SyncScheduleResponseDto })
+  async getSchedule(): Promise<SyncScheduleResponseDto> {
+    const [settings, lastRun] = await Promise.all([
+      this.settings.getSettings(),
+      this.runs.findLatest('sso'),
+    ]);
+    return {
+      ...this.scheduler.getStatus(),
+      ...settings,
+      lastRun: lastRun === null ? null : toSyncRunResponse(lastRun),
+    };
+  }
+
+  @Put('schedule')
+  @RequirePermission('sync:manage')
+  @ApiOperation({
+    summary: '修改 SSO 定时同步设置',
+    description:
+      '只传要改的字段；写数据库后立即重新排期。间隔单位是秒，' +
+      '`intervalSeconds` 最小 60，`fullIntervalSeconds` 最小 3600。',
+  })
+  @ApiOkResponse({ type: SyncScheduleResponseDto })
+  async updateSchedule(
+    @Body() dto: UpdateSyncScheduleDto,
+  ): Promise<SyncScheduleResponseDto> {
+    await this.settings.updateSettings(dto);
+    await this.scheduler.reschedule();
+    return this.getSchedule();
+  }
 
   @Post('sso/run')
   @HttpCode(HttpStatus.ACCEPTED)
@@ -48,7 +92,7 @@ export class SyncController {
     summary: '手动触发一次 SSO 同步',
     description:
       '立即开一条 RUNNING 流水并返回 runId，同步在后台执行——全量同步可能超过网关超时，' +
-      '不能同步等待。用 `GET /sync/runs` 查状态。仅超管或持有 `sync:run` 的账号可调。',
+      '不能同步等待。用 `GET /sync/runs` 查状态。',
   })
   @ApiAcceptedResponse({
     description: '已受理，返回流水 ID',
@@ -76,6 +120,8 @@ export class SyncController {
       );
     }
 
+    const settings = await this.settings.getSettings();
+    this.source.setStudentsEnabled(settings.studentsEnabled);
     const run = await this.sync.startRun(this.source, { mode });
 
     void (async () => {

@@ -41,6 +41,12 @@ export class RoleService {
    * 供 user 模块全量覆盖式分配角色。只负责落库差集；
    * 受影响者的权限缓存由**调用方**清（裁决 R10 ③：清的是那一个用户）。
    */
+  /** 按 code 找角色 ID；找不到返回 null（审核流按需绑角色） */
+  async findIdByCode(code: string): Promise<bigint | null> {
+    const role = await this.repository.findByCode(code);
+    return role?.id ?? null;
+  }
+
   async replaceUserRoles(
     userId: bigint,
     toAdd: bigint[],

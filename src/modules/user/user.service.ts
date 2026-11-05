@@ -55,6 +55,23 @@ export class UserService {
     return this.repository.findById(id);
   }
 
+  /** 角色变更后清权限缓存：下一次请求按新角色重新算权限 */
+  async clearPermissionCache(userId: bigint): Promise<void> {
+    await this.sessions.clearPermissions([userId]);
+  }
+
+  /** 审核通过时解析「给谁绑哪个角色」；用户或角色不存在返回 null */
+  async resolveRoleGrant(
+    username: string,
+    roleCode: string,
+  ): Promise<{ userId: bigint; roleId: bigint } | null> {
+    const user = await this.repository.findByUsername(username);
+    if (user === null) return null;
+    const roleId = await this.roles.findIdByCode(roleCode);
+    if (roleId === null) return null;
+    return { userId: user.id, roleId };
+  }
+
   async recordLogin(userId: bigint): Promise<void> {
     await this.repository.recordLogin(userId);
   }

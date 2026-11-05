@@ -154,6 +154,14 @@ export interface TransitionInput {
    * 而 §4.7 要求「审核通过材料**统一**归档」，靠人补是做不到「统一」的。
    * 幂等：同一 `(targetType, targetId)` 已存在未删行时跳过，重复审核不报错。
    */
+  /**
+   * 审核通过时同事务绑定角色（教师 → 审核通过后叠加 mentor）。
+   * 已绑过则跳过；调用方解析不到用户/角色时不传。
+   */
+  grantRole?: {
+    userId: bigint;
+    roleId: bigint;
+  };
   archive?: {
     targetType: string;
     targetId: string;
@@ -409,6 +417,23 @@ export class MentorApplicationRepository {
       // （status 一列不碰，§0.5）。写在状态机之后：申请先落定，回写才有据。
       if (input.landing !== undefined) {
         await input.landing.writeProfile(tx);
+      }
+
+      // 审核通过叠加能力角色（teacher → mentor）与状态推进同一事务：
+      // 申请已批准但角色没绑上，会让新导师登录后看不到导师功能。
+      if (input.grantRole !== undefined) {
+        const existingRole = await tx.sysUserRole.findFirst({
+          where: input.grantRole,
+        });
+        if (existingRole === null) {
+          await tx.sysUserRole.create({
+            data: {
+              ...input.grantRole,
+              createdBy: 0n,
+              updatedBy: 0n,
+            },
+          });
+        }
       }
 
       const row = await tx.mentorApplication.findFirst({

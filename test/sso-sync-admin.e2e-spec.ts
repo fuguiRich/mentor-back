@@ -6,6 +6,7 @@ import { ErrorCode } from '../src/common/constants/error-code';
 import type { ResponseEnvelope } from '../src/common/interceptors/response.interceptor';
 import { redisKeys } from '../src/infra/redis/redis-keys';
 import { PrismaService } from '../src/infra/prisma/prisma.service';
+import { SyncService } from '../src/modules/sync/sync.service';
 import { RedisService } from '../src/infra/redis/redis.service';
 import {
   authedAgent,
@@ -76,6 +77,10 @@ describe('SSO 同步管理入口 (e2e)', () => {
 
   it('超管 POST /sync/sso/run → 202 + runId', async () => {
     const tokens = await loginAs(app, admin.username, admin.password);
+    // 只验证入口：真正执行由 sso-sync e2e 覆盖，避免后台任务拖到清表之后
+    const execute = jest
+      .spyOn(app.get(SyncService), 'executeRun')
+      .mockResolvedValue({} as never);
     const response = await authedAgent(app, tokens.accessToken)
       .post('/sync/sso/run')
       .send({ mode: 'full' })
@@ -83,6 +88,8 @@ describe('SSO 同步管理入口 (e2e)', () => {
 
     const body = response.body as ResponseEnvelope<{ runId: string }>;
     expect(body.data.runId).toMatch(/^\d+$/);
+
+    execute.mockRestore();
   });
 
   it('已有同步锁 → POST /sync/sso/run 409', async () => {
@@ -118,5 +125,56 @@ describe('SSO 同步管理入口 (e2e)', () => {
       rows: Array<{ source: string; mode: string | null }>;
     }>;
     expect(Array.isArray(body.data.rows)).toBe(true);
+  });
+  it('超管 GET /sync/schedule → 200，返回启停与间隔', async () => {
+    const tokens = await loginAs(app, admin.username, admin.password);
+    const response = await authedAgent(app, tokens.accessToken)
+      .get('/sync/schedule')
+      .expect(200);
+
+    const body = response.body as ResponseEnvelope<{
+      enabled: boolean;
+      intervalSeconds: number;
+      fullIntervalSeconds: number;
+      studentsEnabled: boolean;
+      running: boolean;
+      lastRun: unknown;
+    }>;
+    expect(typeof body.data.enabled).toBe('boolean');
+    expect(body.data.intervalSeconds).toBeGreaterThan(0);
+    expect(body.data.fullIntervalSeconds).toBeGreaterThan(0);
+  });
+
+  it('普通用户 GET /sync/schedule → 403', async () => {
+    const tokens = await loginAs(app, normal.username, normal.password);
+    await authedAgent(app, tokens.accessToken)
+      .get('/sync/schedule')
+      .expect(403);
+  });
+
+  it('超管 PUT /sync/schedule → 200，新间隔立即生效', async () => {
+    const tokens = await loginAs(app, admin.username, admin.password);
+    const response = await authedAgent(app, tokens.accessToken)
+      .put('/sync/schedule')
+      .send({
+        enabled: false,
+        intervalSeconds: 7200,
+        fullIntervalSeconds: 86400,
+        studentsEnabled: false,
+      })
+      .expect(200);
+
+    const body = response.body as ResponseEnvelope<{
+      enabled: boolean;
+      intervalSeconds: number;
+      fullIntervalSeconds: number;
+      studentsEnabled: boolean;
+    }>;
+    expect(body.data).toMatchObject({
+      enabled: false,
+      intervalSeconds: 7200,
+      fullIntervalSeconds: 86400,
+      studentsEnabled: false,
+    });
   });
 });

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { SysConfigModule } from '../config/config.module';
 import { ConfigService } from '@nestjs/config';
 import { ProjectionWriter } from './projection';
 import { SyncOrgRepository } from './sync-org.repository';
@@ -10,6 +11,7 @@ import { SsoOpenApiClient } from './sso/sso-open-api.client';
 import { SsoSyncSource } from './sso/sso-sync.source';
 import { SsoSyncScheduler } from './sso/sso-sync.scheduler';
 import { SyncController } from './sync.controller';
+import { SyncSettingsService } from './sso/sync-settings.service';
 import { SsoRateLimiter } from '../auth/sso/sso-rate-limiter.service';
 
 /**
@@ -17,6 +19,7 @@ import { SsoRateLimiter } from '../auth/sso/sso-rate-limiter.service';
  * 都在这里；`PrismaService` 不用 import——`PrismaModule` 是 `@Global()` 的。
  */
 @Module({
+  imports: [SysConfigModule],
   controllers: [SyncController],
   providers: [
     SyncRunRepository,
@@ -34,6 +37,7 @@ import { SsoRateLimiter } from '../auth/sso/sso-rate-limiter.service';
       inject: [ConfigService, SsoRateLimiter],
     },
     SsoSyncSource,
+    SyncSettingsService,
     SsoSyncScheduler,
   ],
   exports: [SyncService, SsoUserProvisioner, SsoOpenApiClient, SsoSyncSource],

@@ -447,6 +447,16 @@ export class ReviewService {
     landing?: TransitionInput['landing'];
     archive?: TransitionInput['archive'];
   }): Promise<MentorApplication> {
+    // 入驻申请通过时叠加 mentor 角色；教师角色在同步/建号时已绑。
+    const grantRole =
+      input.to === APPROVED &&
+      input.application.type === MENTOR_APPLICATION_TYPE.ONBOARD
+        ? await this.users.resolveRoleGrant(
+            input.application.applicant.login,
+            'mentor',
+          )
+        : null;
+
     const row = await this.repository.applyTransition({
       applicationId: input.application.id,
       validFrom: input.validFrom,
@@ -458,11 +468,16 @@ export class ReviewService {
       profileId: input.application.profileId,
       profileStatus: this.profileStatusEffect(input.application, input.to),
       ...(input.landing === undefined ? {} : { landing: input.landing }),
+      ...(grantRole === null ? {} : { grantRole }),
       ...(input.archive === undefined ? {} : { archive: input.archive }),
     });
     if (row === null) {
       throw this.transitionInvalid();
     }
+    if (grantRole !== null) {
+      await this.users.clearPermissionCache(grantRole.userId);
+    }
+
     return row;
   }
 

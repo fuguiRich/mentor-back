@@ -188,11 +188,19 @@ describe('SSO 登录（api-login 优先 + 本地回退）(e2e)', () => {
           createdBy: 0n,
           updatedBy: 0n,
         },
+        {
+          code: 'teacher',
+          name: '教师',
+          dataScope: 'self',
+          status: 1,
+          createdBy: 0n,
+          updatedBy: 0n,
+        },
       ],
     });
   });
 
-  it('SSO 成功 → 自动建号 + 回写密码/信息 + mentor 角色', async () => {
+  it('SSO 成功 → 自动建号 + 回写密码/信息 + teacher 角色', async () => {
     const response = await request(app.getHttpServer() as Server)
       .post('/auth/login')
       .send({ username: 'T950', password: 'Passw0rd!' })
@@ -220,11 +228,11 @@ describe('SSO 登录（api-login 优先 + 本地回退）(e2e)', () => {
     });
     expect(person?.personType).toBe('teacher');
 
-    const mentorRole = await prisma.client.sysRole.findFirst({
-      where: { code: 'mentor' },
+    const teacherRole = await prisma.client.sysRole.findFirst({
+      where: { code: 'teacher' },
     });
     const bound = await prisma.client.sysUserRole.findFirst({
-      where: { userId: user?.id, roleId: mentorRole?.id },
+      where: { userId: user?.id, roleId: teacherRole?.id },
     });
     expect(bound).not.toBeNull();
   });
@@ -281,12 +289,12 @@ describe('SSO 登录（api-login 优先 + 本地回退）(e2e)', () => {
     const user = await prisma.client.sysUser.findFirst({
       where: { username: 'T950' },
     });
-    const mentorRole = await prisma.client.sysRole.findFirst({
-      where: { code: 'mentor' },
+    const teacherRole = await prisma.client.sysRole.findFirst({
+      where: { code: 'teacher' },
     });
     expect(
       await prisma.client.sysUserRole.findFirst({
-        where: { userId: user?.id, roleId: mentorRole?.id },
+        where: { userId: user?.id, roleId: teacherRole?.id },
       }),
     ).not.toBeNull();
     expect(

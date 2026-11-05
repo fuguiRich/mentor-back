@@ -133,6 +133,14 @@ describe('SSO 定时同步 (e2e)', () => {
           createdBy: 0n,
           updatedBy: 0n,
         },
+        {
+          code: 'teacher',
+          name: '教师',
+          dataScope: 'self',
+          status: 1,
+          createdBy: 0n,
+          updatedBy: 0n,
+        },
       ],
     });
   }
@@ -253,12 +261,12 @@ describe('SSO 定时同步 (e2e)', () => {
         ?.personType,
     ).toBe('student');
 
-    const mentorRole = await prisma.client.sysRole.findFirst({
-      where: { code: 'mentor' },
+    const teacherRole = await prisma.client.sysRole.findFirst({
+      where: { code: 'teacher' },
     });
     expect(
       await prisma.client.sysUserRole.findFirst({
-        where: { userId: teacher?.id, roleId: mentorRole?.id },
+        where: { userId: teacher?.id, roleId: teacherRole?.id },
       }),
     ).not.toBeNull();
   });

@@ -3235,9 +3235,73 @@
         ]
       }
     },
+    "/sync/schedule": {
+      "get": {
+        "description": "返回当前启停、间隔、是否同步学生、是否有任务在跑、下次触发时间和最近一条流水。",
+        "operationId": "SyncController_getSchedule",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncScheduleResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "查看 SSO 定时同步设置与运行状态",
+        "tags": [
+          "同步"
+        ]
+      },
+      "put": {
+        "description": "只传要改的字段；写数据库后立即重新排期。间隔单位是秒，`intervalSeconds` 最小 60，`fullIntervalSeconds` 最小 3600。",
+        "operationId": "SyncController_updateSchedule",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSyncScheduleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncScheduleResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数失败（10001）。管道校验失败时 data.fields 给出逐字段清单（schema 如右）；业务层参数失败时 data 为 null。详见全局说明",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "修改 SSO 定时同步设置",
+        "tags": [
+          "同步"
+        ]
+      }
+    },
     "/sync/sso/run": {
       "post": {
-        "description": "立即开一条 RUNNING 流水并返回 runId，同步在后台执行——全量同步可能超过网关超时，不能同步等待。用 `GET /sync/runs` 查状态。仅超管或持有 `sync:run` 的账号可调。",
+        "description": "立即开一条 RUNNING 流水并返回 runId，同步在后台执行——全量同步可能超过网关超时，不能同步等待。用 `GET /sync/runs` 查状态。",
         "operationId": "SyncController_runSso",
         "parameters": [],
         "requestBody": {
@@ -13434,20 +13498,6 @@
           "pageSize"
         ]
       },
-      "RunSyncDto": {
-        "type": "object",
-        "properties": {
-          "mode": {
-            "type": "string",
-            "description": "同步模式；不传按增量（没有可用水位时自动退化为全量）",
-            "enum": [
-              "incremental",
-              "full"
-            ],
-            "example": "incremental"
-          }
-        }
-      },
       "SyncRunResponseDto": {
         "type": "object",
         "properties": {
@@ -13509,6 +13559,97 @@
           "okCount",
           "failCount"
         ]
+      },
+      "SyncScheduleResponseDto": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "是否启用定时同步",
+            "example": true
+          },
+          "intervalSeconds": {
+            "type": "number",
+            "description": "同步间隔（秒）",
+            "example": 21600
+          },
+          "fullIntervalSeconds": {
+            "type": "number",
+            "description": "全量同步间隔（秒）",
+            "example": 604800
+          },
+          "studentsEnabled": {
+            "type": "boolean",
+            "description": "是否同步学生",
+            "example": false
+          },
+          "running": {
+            "type": "boolean",
+            "description": "当前是否有同步在跑",
+            "example": false
+          },
+          "nextRunAt": {
+            "type": "string",
+            "description": "下次触发时间（UTC ISO 8601）；关闭时为空",
+            "nullable": true
+          },
+          "lastRun": {
+            "description": "最近一条流水；从未跑过时为空",
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SyncRunResponseDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "enabled",
+          "intervalSeconds",
+          "fullIntervalSeconds",
+          "studentsEnabled",
+          "running"
+        ]
+      },
+      "UpdateSyncScheduleDto": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "是否启用定时同步",
+            "example": true
+          },
+          "intervalSeconds": {
+            "type": "number",
+            "description": "同步间隔（秒），最小 60",
+            "example": 21600
+          },
+          "fullIntervalSeconds": {
+            "type": "number",
+            "description": "全量同步间隔（秒），最小 3600",
+            "example": 604800
+          },
+          "studentsEnabled": {
+            "type": "boolean",
+            "description": "是否同步学生；缺 edu:classes 能力键时置 false",
+            "example": false
+          }
+        }
+      },
+      "RunSyncDto": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "description": "同步模式；不传按增量（没有可用水位时自动退化为全量）",
+            "enum": [
+              "incremental",
+              "full"
+            ],
+            "example": "incremental"
+          }
+        }
       },
       "SyncRunPageResponseDto": {
         "type": "object",

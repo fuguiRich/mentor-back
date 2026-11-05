@@ -32,6 +32,8 @@ const ADMIN_REAL_NAME = process.env.SEED_ADMIN_REAL_NAME ?? '超级管理员';
  */
 const SEED_ROLES = [
   { code: 'student', name: '学生', dataScope: 'self' },
+  // 教师是身份；导师是审核通过后才获得的能力角色
+  { code: 'teacher', name: '教师', dataScope: 'self' },
   { code: 'mentor', name: '导师', dataScope: 'self' },
   {
     code: 'college_admin',
@@ -131,6 +133,7 @@ const SEED_PERMISSIONS = [
   // 手动触发 SSO 同步。只种码不绑角色：超管绕过权限检查，
   // 其他账号要手动同步时由超管按需授权。
   { code: 'sync:run', name: '手动触发同步' },
+  { code: 'sync:manage', name: '管理同步定时任务' },
 ] as const;
 
 /**
@@ -145,6 +148,17 @@ const SEED_PERMISSIONS = [
  *   ——学生不是导师，也不审核。
  */
 const SEED_ROLE_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
+  // 教师：能提交入驻申请、维护本人档案、检索导师；审核通过后再叠加 mentor 角色
+  teacher: [
+    'mentor:profile',
+    'mentor:profile-update',
+    'mentor-application:submit',
+    'mentor-application:withdraw',
+    'mentor-application:list',
+    'mentor:search',
+    'message:list',
+    'file:create',
+  ],
   mentor: [
     'mentor:profile',
     'mentor:profile-update',
@@ -234,6 +248,8 @@ const SEED_ROLE_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
     'config:create',
     'config:update',
     'config:delete',
+    'sync:run',
+    'sync:manage',
     // P5 §4.5 / §5.4：全校工作进度、发提醒、看全校学生成果
     'message:list',
     'work:progress',
@@ -1044,22 +1060,125 @@ async function seedDemoData(rootDeptId: bigint): Promise<void> {
   }
 }
 
+/**
+ * 教师角色回填：历史同步把教师绑成了 mentor；这里按「是否已有生效档案」拆开。
+ * - 有已生效档案 → 补 teacher，保留/补 mentor；
+ * - 没有 → 补 teacher，摘掉 mentor。
+ * 只处理 personType='teacher'，不碰内外校导师与管理员。
+ */
+async function backfillTeacherRoles(): Promise<void> {
+  const teacherRole = await prisma.sysRole.findFirst({
+    where: { code: 'teacher', deletedAt: null },
+  });
+  const mentorRole = await prisma.sysRole.findFirst({
+    where: { code: 'mentor', deletedAt: null },
+  });
+  if (teacherRole === null || mentorRole === null) {
+    console.log('教师角色回填跳过：teacher / mentor 角色不存在');
+    return;
+  }
+
+  const teachers = await prisma.syncPerson.findMany({
+    where: { personType: 'teacher', deletedAt: null },
+    select: { login: true },
+  });
+
+  let addedTeacher = 0;
+  let addedMentor = 0;
+  let removedMentor = 0;
+
+  for (const { login } of teachers) {
+    const user = await prisma.sysUser.findFirst({
+      where: { username: login, deletedAt: null },
+      select: { id: true },
+    });
+    if (user === null) continue;
+
+    const approved = await prisma.mentorProfile.findFirst({
+      where: { person: { login }, status: 2, deletedAt: null },
+      select: { id: true },
+    });
+
+    const teacherBinding = await prisma.sysUserRole.findFirst({
+      where: { userId: user.id, roleId: teacherRole.id },
+    });
+    if (teacherBinding === null) {
+      await prisma.sysUserRole.create({
+        data: {
+          userId: user.id,
+          roleId: teacherRole.id,
+          createdBy: SYSTEM_USER_ID,
+          updatedBy: SYSTEM_USER_ID,
+        },
+      });
+      addedTeacher += 1;
+    }
+
+    if (approved !== null) {
+      const mentorBinding = await prisma.sysUserRole.findFirst({
+        where: { userId: user.id, roleId: mentorRole.id },
+      });
+      if (mentorBinding === null) {
+        await prisma.sysUserRole.create({
+          data: {
+            userId: user.id,
+            roleId: mentorRole.id,
+            createdBy: SYSTEM_USER_ID,
+            updatedBy: SYSTEM_USER_ID,
+          },
+        });
+        addedMentor += 1;
+      }
+    } else {
+      const removed = await prisma.sysUserRole.deleteMany({
+        where: { userId: user.id, roleId: mentorRole.id },
+      });
+      removedMentor += removed.count;
+    }
+  }
+
+  console.log(
+    `教师角色回填：teacher +${addedTeacher}，mentor +${addedMentor}，mentor -${removedMentor}`,
+  );
+}
+
 async function main(): Promise<void> {
   await seedRoles();
   await seedPermissions();
   await seedConfigs();
 
-  const existingDept = await prisma.sysDept.findFirst({
-    // deletedAt: null 不能省：软删的根部门仍在该表里，少了这个条件
-    // 重跑 seed 会把它当成已播种、跳过重建，根部门与 admin 永远回不来。
-    where: { name: ROOT_DEPT_NAME, parentId: null, deletedAt: null },
+  // 用 admin 账号判断「seed 是否已经跑过」，而不是根部门的名字：
+  // SSO 同步会把根部门改名（如「长沙医学院」），按名字会误判成没播过。
+  const existingAdmin = await prisma.sysUser.findFirst({
+    where: { username: ADMIN_USERNAME, deletedAt: null },
   });
-  if (existingDept) {
-    console.log(
-      'seed 已执行过，跳过（根部门与 admin 不重复创建；缺的角色已补）',
-    );
-    // 演示数据走自己的幂等逻辑：老库上第一次打开 SEED_DEMO_DATA 也要能补出来
-    await seedDemoData(existingDept.id);
+  if (existingAdmin !== null) {
+    const existingDept = await prisma.sysDept.findFirst({
+      where: { parentId: null, deletedAt: null },
+    });
+    if (existingDept !== null) {
+      console.log(
+        'seed 已执行过，跳过（根部门与 admin 不重复创建；缺的角色已补）',
+      );
+      // 演示数据走自己的幂等逻辑：老库上第一次打开 SEED_DEMO_DATA 也要能补出来
+      await seedDemoData(existingDept.id);
+      await backfillTeacherRoles();
+      return;
+    }
+    // 极端情况：admin 在但根部门没了。只补根部门，不再建 admin。
+    const repaired = await prisma.sysDept.create({
+      data: {
+        parentId: null,
+        name: ROOT_DEPT_NAME,
+        sortOrder: 0,
+        status: 1,
+        remark: '根部门，由 seed 补建',
+        createdBy: SYSTEM_USER_ID,
+        updatedBy: SYSTEM_USER_ID,
+      },
+    });
+    await seedDemoData(repaired.id);
+    await backfillTeacherRoles();
     return;
   }
 
@@ -1104,6 +1223,7 @@ async function main(): Promise<void> {
   }
 
   await seedDemoData(dept.id);
+  await backfillTeacherRoles();
 }
 
 main()

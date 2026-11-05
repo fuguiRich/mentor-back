@@ -32,11 +32,18 @@ export class SsoSyncSource implements SyncSource {
   readonly reuseRootDept = true;
 
   private readonly logger = new Logger(SsoSyncSource.name);
+  /** 调度器/手动入口在每次跑之前写入；null = 用环境变量默认值 */
+  private studentsEnabledOverride: boolean | null = null;
 
   constructor(
     private readonly client: SsoOpenApiClient,
     private readonly config: ConfigService<AppConfig, true>,
   ) {}
+
+  /** 运行期设置（数据库 SysConfig）优先于环境变量 */
+  setStudentsEnabled(enabled: boolean): void {
+    this.studentsEnabledOverride = enabled;
+  }
 
   async fetchOrgUnits(_since: Date | null): Promise<SyncOrgUnitRow[]> {
     const tree = await this.client.getOrgDepartments();

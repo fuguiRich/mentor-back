@@ -161,6 +161,28 @@ export class ConfigService {
     });
   }
 
+  /** 按编码写布尔；停用的同 code 行会被重新启用 */
+  async setBoolean(code: string, name: string, value: boolean): Promise<void> {
+    const text = value ? 'true' : 'false';
+    const existing = await this.repository.findAnyByCode(code);
+    if (existing === null) {
+      await this.repository.create({
+        code,
+        name,
+        value: text,
+        valueType: 'boolean',
+        status: 1,
+      });
+      return;
+    }
+    await this.repository.update(existing.id, {
+      name,
+      value: text,
+      valueType: 'boolean',
+      status: 1,
+    });
+  }
+
   // ── 断言与错误 ────────────────────────────────────────────────
 
   private async assertExists(id: bigint) {

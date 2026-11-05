@@ -29,8 +29,8 @@ export const PERSON_TYPE_ROLE_CODE = {
   student: 'student',
   internalMentor: 'mentor',
   externalMentor: 'mentor',
-  // 统一认证同步来的教师：默认导师角色，等本人提交入驻申请再建档案
-  teacher: 'mentor',
+  // 统一认证同步来的教师：先给 teacher，审核通过后再由审核流叠加 mentor
+  teacher: 'teacher',
 } as const;
 
 /**

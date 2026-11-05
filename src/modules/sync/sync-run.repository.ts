@@ -126,6 +126,14 @@ export class SyncRunRepository {
     return run?.finishedAt ?? null;
   }
 
+  /** 最近一条流水（任意状态），给定时任务状态接口用 */
+  async findLatest(source: string): Promise<SyncRun | null> {
+    return this.prisma.client.syncRun.findFirst({
+      where: { source },
+      orderBy: { startedAt: 'desc' },
+    });
+  }
+
   /** 流水列表。`source` 为空 = 全部来源 */
   async findPage(
     source: string | undefined,
