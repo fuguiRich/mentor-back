@@ -541,7 +541,7 @@ interface DemoPersonSpec {
  * `T004` 是**只有 teacher 角色、没有导师档案**的教师：用来走
  * 「建档 → 提交入驻申请 → 审核通过后加 mentor 角色」的完整链路。
  * 两个学生是**故意的**：预约、评价、成果里凡是有「本人 / 他人」区分的断言，
- * 只有一个学生就只能测到正路径；`S002` 用来测「别人的预约看不到」。
+ * 只有一个学生就只能测到正路径；`20230002` 用来测「别人的预约看不到」。
  */
 const DEMO_PEOPLE: readonly DemoPersonSpec[] = [
   {
@@ -573,14 +573,14 @@ const DEMO_PEOPLE: readonly DemoPersonSpec[] = [
     roles: ['teacher'],
   },
   {
-    login: 'S001',
+    login: '20230001',
     realName: '陈一鸣',
     personType: 'student',
     orgCode: 'CS-SE',
     roles: ['student'],
   },
   {
-    login: 'S002',
+    login: '20230002',
     realName: '赵晓雨',
     personType: 'student',
     orgCode: 'CS-SE',
@@ -742,12 +742,124 @@ async function ensureDemoUser(
 }
 
 /**
+ * 学生演示账号的**强制校正**。
+ *
+ * `ensureDemoUser` 对已存在的账号只补角色、不改密码 / 人员类型——这对普通
+ * 演示数据是对的（不覆盖手工改动），但学号从 `S001` 改成数字后，老库里可能
+ * 已经存在同名的非学生行（测试残留）。学生的身份、密码、角色必须收敛到
+ * 演示规格，否则「能登录但角色不对 / 密码不对」。
+ */
+async function repairDemoStudent(
+  spec: DemoPersonSpec,
+  deptId: bigint,
+  orgUnitId: bigint,
+  roleIds: ReadonlyMap<string, bigint>,
+): Promise<void> {
+  const person = await prisma.syncPerson.findFirst({
+    where: { login: spec.login },
+  });
+  if (person !== null) {
+    await prisma.syncPerson.update({
+      where: { id: person.id },
+      data: {
+        realName: spec.realName,
+        personType: 'student',
+        orgUnitId,
+      },
+    });
+  }
+
+  const user = await prisma.sysUser.findFirst({
+    where: { username: spec.login },
+  });
+  if (user === null) {
+    return;
+  }
+  await prisma.sysUser.update({
+    where: { id: user.id },
+    data: {
+      password: hashSync(DEMO_PASSWORD, BCRYPT_ROUNDS),
+      realName: spec.realName,
+      deptId,
+      status: 1,
+      authSource: 'sso',
+    },
+  });
+
+  const desiredRoleIds = new Set(
+    spec.roles
+      .map((code) => roleIds.get(code))
+      .filter((id): id is bigint => id !== undefined),
+  );
+  const current = await prisma.sysUserRole.findMany({
+    where: { userId: user.id },
+  });
+  for (const binding of current) {
+    if (!desiredRoleIds.has(binding.roleId)) {
+      await prisma.sysUserRole.delete({ where: { id: binding.id } });
+    }
+  }
+  for (const roleId of desiredRoleIds) {
+    if (!current.some((binding) => binding.roleId === roleId)) {
+      await prisma.sysUserRole.create({
+        data: {
+          userId: user.id,
+          roleId,
+          createdBy: SYSTEM_USER_ID,
+          updatedBy: SYSTEM_USER_ID,
+        },
+      });
+    }
+  }
+}
+
+/**
  * 生成演示数据：组织树 + 测试账号 + 一份已生效的导师档案。
  *
  * 幂等：全部按自然键 find-then-write（部门按「同名同父」、组织按 code、
  * 人员按 login、账号按 username、档案按 personId）。重复跑不产生重复行，
  * 也不覆盖已存在行上的任何字段——管理员手工改过的演示账号不会被冲回去。
  */
+/**
+ * 学号格式迁移：早期演示账号用的是 S001 / S002，不符合「学号 = 数字」
+ * 的校验口径。这里把老账号原地改名，保留它已有的预约 / 评价 / 成果关系。
+ *
+ * 目标账号已存在时跳过（幂等），不覆盖任何已有行。
+ */
+const LEGACY_STUDENT_LOGIN_RENAMES: ReadonlyArray<readonly [string, string]> = [
+  ['S001', '20230001'],
+  ['S002', '20230002'],
+];
+
+async function renameLegacyDemoStudents(): Promise<void> {
+  for (const [from, to] of LEGACY_STUDENT_LOGIN_RENAMES) {
+    const person = await prisma.syncPerson.findFirst({
+      where: { login: from },
+    });
+    const targetPerson = await prisma.syncPerson.findFirst({
+      where: { login: to },
+    });
+    if (person !== null && targetPerson === null) {
+      await prisma.syncPerson.update({
+        where: { id: person.id },
+        data: { login: to },
+      });
+      console.log(`学生学号迁移：${from} → ${to}`);
+    }
+
+    const user = await prisma.sysUser.findFirst({ where: { username: from } });
+    const targetUser = await prisma.sysUser.findFirst({
+      where: { username: to },
+    });
+    if (user !== null && targetUser === null) {
+      await prisma.sysUser.update({
+        where: { id: user.id },
+        data: { username: to, employeeNo: to },
+      });
+    }
+  }
+}
+
 async function seedDemoData(rootDeptId: bigint): Promise<void> {
   if (!DEMO_DATA_ENABLED) {
     console.log(
@@ -755,6 +867,8 @@ async function seedDemoData(rootDeptId: bigint): Promise<void> {
     );
     return;
   }
+
+  await renameLegacyDemoStudents();
 
   // ---- 1. 组织树：SyncOrgUnit 与 SysDept 各一套，靠 `deptId` 投影连起来 ----
   const orgs = new Map<string, { unitId: bigint; deptId: bigint }>();
@@ -830,6 +944,9 @@ async function seedDemoData(rootDeptId: bigint): Promise<void> {
     }
 
     await ensureDemoUser(spec, org.deptId, roleIds);
+    if (spec.personType === 'student') {
+      await repairDemoStudent(spec, org.deptId, org.unitId, roleIds);
+    }
   }
 
   // 管理员不在同步源里：只有 SysUser
@@ -966,7 +1083,7 @@ async function seedDemoData(rootDeptId: bigint): Promise<void> {
   // 让 §4.5 的消息列表与 §5.4 的「关联成果 → 考核 / 归档」两条路径
   // 在演示环境里各有一条现成数据可看。
   const demoStudent = await prisma.syncPerson.findFirst({
-    where: { login: 'S001', deletedAt: null },
+    where: { login: '20230001', deletedAt: null },
   });
   const demoMentorUser = await prisma.sysUser.findFirst({
     where: { username: 'T001', deletedAt: null },
@@ -1026,7 +1143,7 @@ async function seedDemoData(rootDeptId: bigint): Promise<void> {
           updatedBy: SYSTEM_USER_ID,
         },
       });
-      console.log(`学生成果（补建）：S001 → T001 / 已关联`);
+      console.log(`学生成果（补建）：20230001 → T001 / 已关联`);
     }
 
     if (demoMentorUser !== null) {
