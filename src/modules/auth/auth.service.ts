@@ -399,8 +399,9 @@ export class AuthService {
     const menus = await this.permissions.findMenuTreeByCodes(codes);
 
     // 首次建档前前端也要知道内校/外校，否则无法提前隐藏
-    // affiliateOrg / socialRoles 两个字段。
-    const personType = await this.users.findPersonTypeByUsername(user.username);
+    // affiliateOrg / socialRoles 两个字段。学生档案还要展示专业 / 班级 / 学院。
+    const person = await this.users.findPersonProfileByUsername(user.username);
+    const personType = person?.personType ?? null;
     const mentorType =
       personType === 'externalMentor'
         ? 'external'
@@ -409,7 +410,14 @@ export class AuthService {
           : null;
 
     return {
-      user: { ...user, personType, mentorType },
+      user: {
+        ...user,
+        personType,
+        mentorType,
+        major: person?.major ?? null,
+        className: person?.className ?? null,
+        orgUnitName: person?.orgUnitName ?? null,
+      },
       permissions: [...codes],
       menus,
     };

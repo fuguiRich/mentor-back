@@ -16,6 +16,11 @@ import type { AssessmentStatsResponseDto } from './dto/assessment-stats.dto';
 import type { WorkbenchResponseDto } from './dto/workbench.dto';
 import type { GuidanceStatsResponseDto } from './dto/guidance-stats.dto';
 import type { MentorStatsResponseDto } from './dto/mentor-stats.dto';
+import type {
+  MeRecordListResponseDto,
+  MeReviewListResponseDto,
+  QueryMyRecordDto,
+} from './dto/me-record.dto';
 import type { StatsQueryDto } from './dto/stats-query.dto';
 import { csvFilename, toCellText } from './export/csv.writer';
 import { StatsRepository, toFieldArray } from './stats.repository';
@@ -853,6 +858,86 @@ export class StatsService {
     };
   }
 
+  /** `GET /me/records`（§2.6）：学生本人已完成预约的指导记录 / 评价明细 */
+  async listStudentRecords(
+    caller: RequestUser,
+    query: QueryMyRecordDto,
+  ): Promise<MeRecordListResponseDto> {
+    const personId = await this.resolveStudentPerson(caller);
+    const range = this.resolveStudentRange(query);
+    const { rows, total } = await this.repository.findStudentRecordsPage(
+      personId,
+      { ...range, ...(query.type === undefined ? {} : { type: query.type }) },
+      (query.page - 1) * query.pageSize,
+      query.pageSize,
+    );
+    return {
+      list: rows.map((row) => {
+        const record = row.guidanceRecords[0];
+        const review = row.reviews[0];
+        return {
+          appointmentId: row.id.toString(),
+          mentorProfileId: row.mentor.id.toString(),
+          mentorName: row.mentor.person.realName,
+          type: row.type,
+          typeLabel: APPOINTMENT_TYPE_LABELS[row.type] ?? String(row.type),
+          topic: row.topic,
+          actualTime:
+            record === undefined ? null : record.actualTime.toISOString(),
+          durationMinutes: record === undefined ? null : record.durationMinutes,
+          attitude: review?.attitude ?? null,
+          expertise: review?.expertise ?? null,
+          effect: review?.effect ?? null,
+          overallScore:
+            review === undefined
+              ? null
+              : Number(review.overallScore).toFixed(2),
+          comment: review?.comment ?? null,
+        };
+      }),
+      total,
+      page: query.page,
+      pageSize: query.pageSize,
+    };
+  }
+
+  /** `GET /me/reviews`（§2.6）：学生本人写过的评价，按评价时间倒序 */
+  async listStudentReviews(
+    caller: RequestUser,
+    query: QueryMyRecordDto,
+  ): Promise<MeReviewListResponseDto> {
+    const personId = await this.resolveStudentPerson(caller);
+    const range = this.resolveStudentRange(query);
+    const { rows, total } = await this.repository.findStudentReviewsPage(
+      personId,
+      { ...range, ...(query.type === undefined ? {} : { type: query.type }) },
+      (query.page - 1) * query.pageSize,
+      query.pageSize,
+    );
+    return {
+      list: rows.map((row) => ({
+        id: row.id.toString(),
+        appointmentId: row.appointment.id.toString(),
+        mentorProfileId: row.appointment.mentor.id.toString(),
+        mentorName: row.appointment.mentor.person.realName,
+        type: row.appointment.type,
+        typeLabel:
+          APPOINTMENT_TYPE_LABELS[row.appointment.type] ??
+          String(row.appointment.type),
+        topic: row.appointment.topic,
+        attitude: row.attitude,
+        expertise: row.expertise,
+        effect: row.effect,
+        overallScore: Number(row.overallScore).toFixed(2),
+        comment: row.comment,
+        createdAt: row.createdAt.toISOString(),
+      })),
+      total,
+      page: query.page,
+      pageSize: query.pageSize,
+    };
+  }
+
   /** `GET /me/records/export`（§2.6）：**学生本人的**已完成预约 + 记录 + 我的评价 */
   async exportStudentRecords(caller: RequestUser): Promise<ExportPayload> {
     const maxRows = await this.maxRows();
@@ -904,6 +989,47 @@ export class StatsService {
           review === undefined ? '' : (review.comment ?? ''),
         ];
       }),
+    };
+  }
+
+  private async resolveStudentPerson(caller: RequestUser): Promise<bigint> {
+    const user = await this.users.findById(caller.userId);
+    const person =
+      user === null
+        ? null
+        : await this.repository.findPersonByLogin(user.username);
+    if (person === null || person.personType !== 'student') {
+      throw this.forbidden();
+    }
+    return person.id;
+  }
+
+  /** ISO 8601 边界；纯日期 `to` 表示当天结束，避免漏掉整天 */
+  private resolveStudentRange(query: QueryMyRecordDto): {
+    from?: Date;
+    to?: Date;
+  } {
+    const from = query.from === undefined ? undefined : new Date(query.from);
+    const to = query.to === undefined ? undefined : new Date(query.to);
+    if (to !== undefined && query.to !== undefined) {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(query.to)) {
+        to.setUTCHours(23, 59, 59, 999);
+      }
+    }
+    if (
+      from !== undefined &&
+      to !== undefined &&
+      from.getTime() > to.getTime()
+    ) {
+      throw new BusinessException(
+        ErrorCode.PARAM_INVALID,
+        'from 必须不晚于 to',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    return {
+      ...(from === undefined ? {} : { from }),
+      ...(to === undefined ? {} : { to }),
     };
   }
 

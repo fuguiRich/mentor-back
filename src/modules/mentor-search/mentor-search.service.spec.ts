@@ -7,6 +7,7 @@ import type { QueryMentorDto } from './dto/query-mentor.dto';
 import { MentorSearchMapper } from './mentor-search.mapper';
 import {
   buildMentorSearchWhere,
+  type MentorSearchDetailRow,
   type MentorSearchRow,
   type MentorSearchRepository,
 } from './mentor-search.repository';
@@ -15,7 +16,9 @@ import { MentorSearchService } from './mentor-search.service';
 const SYNCED_AT = new Date('2026-10-27T00:00:00.000Z');
 const AUDIT_AT = new Date('2026-10-27T00:00:00.000Z');
 
-function row(overrides: Partial<MentorSearchRow> = {}): MentorSearchRow {
+function row(
+  overrides: Partial<MentorSearchDetailRow> = {},
+): MentorSearchDetailRow {
   return {
     id: 5n,
     personId: 7n,
@@ -33,6 +36,7 @@ function row(overrides: Partial<MentorSearchRow> = {}): MentorSearchRow {
     updatedBy: 0n,
     deletedAt: null,
     deletedBy: null,
+    timeSlots: [],
     person: {
       id: 7n,
       login: 'T001',
@@ -225,6 +229,7 @@ describe('MentorSearchMapper', () => {
       affiliateOrg: '某某研究院',
       socialRoles: '某某学会理事',
       mobile: '13800000000',
+      timeSlots: [],
     });
     expect(Object.keys(detail)).not.toContain('major');
     expect(Object.keys(detail)).not.toContain('className');

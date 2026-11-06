@@ -8,6 +8,7 @@ import { ErrorCode } from '../src/common/constants/error-code';
 import type { ResponseEnvelope } from '../src/common/interceptors/response.interceptor';
 import { currentPeriod } from '../src/modules/assessment/assessment.constants';
 import type { AssessmentResponseDto } from '../src/modules/assessment/dto/assessment-response.dto';
+import type { FileResponseDto } from '../src/modules/file/dto/file-response.dto';
 import type {
   StudentAchievementListResponseDto,
   StudentAchievementResponseDto,
@@ -23,6 +24,7 @@ import {
 } from './e2e-helpers';
 
 const SYNCED_AT = new Date('2026-10-27T00:00:00.000Z');
+const PDF = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34]);
 const PERIOD = currentPeriod();
 const AWARDED_AT = PERIOD.endsWith('-1')
   ? `${PERIOD.slice(0, 4)}-05-01`
@@ -106,6 +108,8 @@ describe('学生成果关联（P5 Task 59 / §5.4）(e2e)', () => {
       [
         'student-achievement:manage',
         'student-achievement:list',
+        // 判据 13 需要先 POST /files 传佐证
+        'file:create',
         'assessment:evaluate',
         'assessment:list',
       ],
@@ -507,6 +511,57 @@ describe('学生成果关联（P5 Task 59 / §5.4）(e2e)', () => {
     expect((response.body as ResponseEnvelope<null>).code).toBe(
       ErrorCode.FORBIDDEN,
     );
+  });
+
+  it('判据 13：成果佐证可预览下载；无佐证 404；无关导师 403', async () => {
+    const upload = await api('sa-college-a')
+      .post('/files')
+      .attach('files', PDF, {
+        filename: '成果佐证.pdf',
+        contentType: 'application/pdf',
+      })
+      .expect(201);
+    const file = (upload.body as ResponseEnvelope<FileResponseDto[]>).data[0];
+
+    const created = await api('sa-college-a')
+      .post('/student-achievements')
+      .send(body({ title: '带佐证的学生成果', proofFileId: file.id }))
+      .expect(201);
+    const id = (created.body as ResponseEnvelope<StudentAchievementResponseDto>)
+      .data.id;
+
+    const preview = await api('sa-student-a')
+      .get(`/student-achievements/${id}/proof/preview`)
+      .expect(200);
+    expect(preview.headers['content-disposition']).toContain('inline');
+    expect(preview.headers['content-type']).toBe('application/pdf');
+    expect(Buffer.compare(preview.body as Buffer, PDF)).toBe(0);
+
+    const download = await api('sa-student-a')
+      .get(`/student-achievements/${id}/proof/download`)
+      .expect(200);
+    expect(download.headers['content-disposition']).toContain('attachment');
+    expect(Buffer.compare(download.body as Buffer, PDF)).toBe(0);
+
+    // 无佐证：新建一条不带 proofFileId 的成果
+    const noProofCreated = await api('sa-college-a')
+      .post('/student-achievements')
+      .send(body({ title: '无佐证的学生成果' }))
+      .expect(201);
+    const noProofId = (
+      noProofCreated.body as ResponseEnvelope<StudentAchievementResponseDto>
+    ).data.id;
+    const noProof = await api('sa-student-a')
+      .get(`/student-achievements/${noProofId}/proof/preview`)
+      .expect(404);
+    expect((noProof.body as ResponseEnvelope<null>).code).toBe(
+      ErrorCode.FILE_NOT_FOUND,
+    );
+
+    // 无关导师（self 范围，且成果未关联任何导师）→ 403
+    await api('sa-mentor-a')
+      .get(`/student-achievements/${id}/proof/preview`)
+      .expect(403);
   });
 });
 

@@ -605,15 +605,24 @@ describe('P1 端到端流程 (e2e)', () => {
     expect(data.applicantId).toBe(personId('mentor-a').toString());
   });
 
-  it('GET /auth/profile 返回 personType / mentorType', async () => {
+  it('GET /auth/profile 返回 personType / mentorType / 学生档案字段', async () => {
     const response = await api('mentor-a').get('/auth/profile').expect(200);
     const data = (
       response.body as ResponseEnvelope<{
-        user: { personType?: string | null; mentorType?: string | null };
+        user: {
+          personType?: string | null;
+          mentorType?: string | null;
+          major?: string | null;
+          className?: string | null;
+          orgUnitName?: string | null;
+        };
       }>
     ).data;
     expect(data.user.personType).toBe('internalMentor');
     expect(data.user.mentorType).toBe('internal');
+    expect(data.user.major).toBeNull();
+    expect(data.user.className).toBeNull();
+    expect(data.user.orgUnitName).toBe('流程学院 A 组织');
   });
 
   it('正链 7：材料能预览下载 → preview 200 + inline，download 200 + attachment，字节一致', async () => {

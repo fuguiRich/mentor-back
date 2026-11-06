@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type {
   MentorProfile,
+  MentorTimeSlot,
   Prisma,
   SyncOrgUnit,
   SyncPerson,
@@ -28,6 +29,11 @@ export interface MentorSearchParams {
 /** 检索行：档案 + 归属人 + 归属人的组织投影（展示姓名 / 类型 / 所属单位用） */
 export type MentorSearchRow = MentorProfile & {
   person: SyncPerson & { orgUnit: SyncOrgUnit };
+};
+
+/** 详情行：检索行 + 当前开放的时段（列表不带，只有详情带） */
+export type MentorSearchDetailRow = MentorSearchRow & {
+  timeSlots: MentorTimeSlot[];
 };
 
 /**
@@ -155,14 +161,22 @@ export class MentorSearchRepository {
    * 详情：**未生效（status ≠ 2）/ 不存在 / 已软删 / 人员已离场一律 null**——
    * 调用方统一 404 / 31102，不区分「没有」与「还没批」，学生侧不需要知道审核状态。
    */
-  async findApprovedById(id: bigint): Promise<MentorSearchRow | null> {
+  async findApprovedById(id: bigint): Promise<MentorSearchDetailRow | null> {
     return this.prisma.client.mentorProfile.findFirst({
       where: {
         id,
         status: MENTOR_PROFILE_STATUS.APPROVED,
         person: { deletedAt: null },
       },
-      include: { person: { include: { orgUnit: true } } },
+      include: {
+        person: { include: { orgUnit: true } },
+        // 只要「开放 + 未软删」：关闭的时段不可约，软删的更不能出现在学生端。
+        // 嵌套关系过滤不会被软删扩展代劳，`deletedAt: null` 必须显式写。
+        timeSlots: {
+          where: { status: SLOT_OPEN_STATUS, deletedAt: null },
+          orderBy: [{ weekday: 'asc' }, { startTime: 'asc' }, { id: 'asc' }],
+        },
+      },
     });
   }
 }

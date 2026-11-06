@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { SysConfigModule } from '../config/config.module';
 import { DataScopeModule } from '../data-scope/data-scope.module';
+import { FileModule } from '../file/file.module';
 import { UserModule } from '../user/user.module';
 import { StudentAchievementController } from './student-achievement.controller';
 import { StudentAchievementRepository } from './student-achievement.repository';
@@ -14,7 +15,7 @@ import { StudentAchievementService } from './student-achievement.service';
  * `SysConfigModule`（归档保留天数）。
  */
 @Module({
-  imports: [UserModule, DataScopeModule, SysConfigModule],
+  imports: [UserModule, DataScopeModule, SysConfigModule, FileModule],
   controllers: [StudentAchievementController],
   providers: [StudentAchievementService, StudentAchievementRepository],
 })

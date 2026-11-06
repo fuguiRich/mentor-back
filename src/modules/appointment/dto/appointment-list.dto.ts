@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsIn, IsInt, IsOptional } from 'class-validator';
+import { IsIn, IsInt, IsISO8601, IsOptional } from 'class-validator';
 import { PageResponseDto } from '../../../common/dto/page-response.dto';
 import { PaginationQueryDto } from '../../../common/dto/pagination-query.dto';
 import { AppointmentResponseDto } from './appointment-response.dto';
@@ -16,9 +16,9 @@ export const APPOINTMENT_STATUS_VALUES: readonly number[] =
 /**
  * `GET /appointments` 的查询参数（Task 30）。
  *
- * 四个参数**全部可选、彼此 AND**：`status` / `type` 是等值过滤，
- * `page` / `pageSize` 继承 {@link PaginationQueryDto}（`pageSize` 上限 100，
- * DTO-10）。
+ * 六个参数**全部可选、彼此 AND**：`status` / `type` 是等值过滤，
+ * `from` / `to` 按 `requestedTime` 收时间范围，`page` / `pageSize` 继承
+ * {@link PaginationQueryDto}（`pageSize` 上限 100，DTO-10）。
  *
  * `status` / `type` 用 `@Type(() => Number)` + `@IsInt` + `@IsIn`：
  * 查询串里它们只会是字符串，`Number('true')` 是 `NaN`，布尔值不会像 JSON
@@ -52,6 +52,26 @@ export class QueryAppointmentDto extends PaginationQueryDto {
   @IsInt({ message: 'type 必须是 1-5 的整数' })
   @IsIn(APPOINTMENT_TYPES, { message: 'type 必须是 1-5 的整数' })
   type?: number;
+
+  @ApiPropertyOptional({
+    description:
+      '预约时间下界（含），按 `requestedTime` 过滤。ISO 8601；纯日期按 UTC 零点。' +
+      '与 `to` 同时给出时必须不晚于 `to`，否则 400 / 10001',
+    example: '2026-01-01',
+  })
+  @IsOptional()
+  @IsISO8601({ strict: true }, { message: 'from 必须是合法的 ISO 8601 时间' })
+  from?: string;
+
+  @ApiPropertyOptional({
+    description:
+      '预约时间上界（含），按 `requestedTime` 过滤。ISO 8601；纯日期表示当天' +
+      ' 23:59:59.999（UTC）。与 `from` 同时给出时必须不早于 `from`，否则 400 / 10001',
+    example: '2026-12-31',
+  })
+  @IsOptional()
+  @IsISO8601({ strict: true }, { message: 'to 必须是合法的 ISO 8601 时间' })
+  to?: string;
 }
 
 /**

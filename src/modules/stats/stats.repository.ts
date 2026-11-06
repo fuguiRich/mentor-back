@@ -6,6 +6,39 @@ import { APPOINTMENT_STATUS } from '../appointment/dto/create-appointment.dto';
 /** 每批读多少条档案（`loadResearchFields` 的分页粒度） */
 const RESEARCH_FIELD_BATCH = 500;
 
+/** `/me/records` 的一行（预约 + 第一条指导记录 + 第一条评价） */
+export interface StudentRecordRow {
+  id: bigint;
+  type: number;
+  topic: string;
+  mentor: { id: bigint; person: { realName: string } };
+  guidanceRecords: Array<{ actualTime: Date; durationMinutes: number }>;
+  reviews: Array<{
+    attitude: number;
+    expertise: number;
+    effect: number;
+    overallScore: { toString(): string };
+    comment: string | null;
+  }>;
+}
+
+/** `/me/reviews` 的一行（评价 + 预约上下文） */
+export interface StudentReviewRow {
+  id: bigint;
+  createdAt: Date;
+  attitude: number;
+  expertise: number;
+  effect: number;
+  overallScore: { toString(): string };
+  comment: string | null;
+  appointment: {
+    id: bigint;
+    type: number;
+    topic: string;
+    mentor: { id: bigint; person: { realName: string } };
+  };
+}
+
 /**
  * 统计域的只读数据访问（P4 Task 45 起）。
  *
@@ -433,10 +466,10 @@ export class StatsRepository {
   /** 身份链第 2 步：`SysUser.username` → `SyncPerson.login` */
   findPersonByLogin(
     login: string,
-  ): Promise<{ id: bigint; realName: string } | null> {
+  ): Promise<{ id: bigint; realName: string; personType: string } | null> {
     return this.prisma.client.syncPerson.findFirst({
       where: { login },
-      select: { id: true, realName: true },
+      select: { id: true, realName: true, personType: true },
     });
   }
 
@@ -601,6 +634,112 @@ export class StatsRepository {
       orderBy: [{ requestedTime: 'desc' }, { id: 'desc' }],
       take: limit + 1,
     });
+  }
+
+  /** `/me/records`：学生本人已完成预约 + 指导记录 + 我的评价（分页） */
+  async findStudentRecordsPage(
+    studentPersonId: bigint,
+    filter: { from?: Date; to?: Date; type?: number },
+    skip: number,
+    take: number,
+  ): Promise<{ rows: StudentRecordRow[]; total: number }> {
+    const where: Prisma.AppointmentWhereInput = {
+      studentPersonId,
+      status: APPOINTMENT_STATUS.COMPLETED,
+      ...(filter.type === undefined ? {} : { type: filter.type }),
+      ...(filter.from === undefined && filter.to === undefined
+        ? {}
+        : {
+            guidanceRecords: {
+              some: {
+                actualTime: {
+                  ...(filter.from === undefined ? {} : { gte: filter.from }),
+                  ...(filter.to === undefined ? {} : { lte: filter.to }),
+                },
+              },
+            },
+          }),
+    };
+    const [total, rows] = await Promise.all([
+      this.prisma.client.appointment.count({ where }),
+      this.prisma.client.appointment.findMany({
+        where,
+        select: {
+          id: true,
+          type: true,
+          topic: true,
+          mentor: {
+            select: { id: true, person: { select: { realName: true } } },
+          },
+          guidanceRecords: {
+            select: { actualTime: true, durationMinutes: true },
+            orderBy: { id: 'asc' },
+            take: 1,
+          },
+          reviews: {
+            select: {
+              attitude: true,
+              expertise: true,
+              effect: true,
+              overallScore: true,
+              comment: true,
+            },
+            orderBy: { id: 'asc' },
+            take: 1,
+          },
+        },
+        orderBy: [{ requestedTime: 'desc' }, { id: 'desc' }],
+        skip,
+        take,
+      }),
+    ]);
+    return { rows, total };
+  }
+
+  /** `/me/reviews`：学生本人写过的评价（分页，按评价时间倒序） */
+  async findStudentReviewsPage(
+    studentPersonId: bigint,
+    filter: { from?: Date; to?: Date; type?: number },
+    skip: number,
+    take: number,
+  ): Promise<{ rows: StudentReviewRow[]; total: number }> {
+    const where: Prisma.StudentReviewWhereInput = {
+      appointment: {
+        studentPersonId,
+        status: APPOINTMENT_STATUS.COMPLETED,
+        ...(filter.type === undefined ? {} : { type: filter.type }),
+      },
+      ...(filter.from === undefined && filter.to === undefined
+        ? {}
+        : {
+            createdAt: {
+              ...(filter.from === undefined ? {} : { gte: filter.from }),
+              ...(filter.to === undefined ? {} : { lte: filter.to }),
+            },
+          }),
+    };
+    const [total, rows] = await Promise.all([
+      this.prisma.client.studentReview.count({ where }),
+      this.prisma.client.studentReview.findMany({
+        where,
+        include: {
+          appointment: {
+            select: {
+              id: true,
+              type: true,
+              topic: true,
+              mentor: {
+                select: { id: true, person: { select: { realName: true } } },
+              },
+            },
+          },
+        },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip,
+        take,
+      }),
+    ]);
+    return { rows, total };
   }
 
   /** 生效档案的 id 列表（`byResearchField` 的输入） */

@@ -386,6 +386,7 @@ describe('预约列表与详情 (e2e)', () => {
     topic: string;
     type?: number;
     status?: number;
+    requestedTime?: Date;
   }): Promise<Appointment> {
     return prisma.client.appointment.create({
       data: {
@@ -393,7 +394,8 @@ describe('预约列表与详情 (e2e)', () => {
         mentorProfileId: profileOf(input.mentor).id,
         type: input.type ?? 1,
         status: input.status ?? 0,
-        requestedTime: new Date(Date.now() + 24 * HOUR_MS),
+        requestedTime:
+          input.requestedTime ?? new Date(Date.now() + 24 * HOUR_MS),
         topic: input.topic,
         questions: '列表 / 详情用例的问题描述',
         mode: 1,
@@ -597,6 +599,55 @@ describe('预约列表与详情 (e2e)', () => {
         .expect(400);
       expectFieldError(response, 'status');
     }
+  });
+
+  it('判据 2b：from/to 按 requestedTime 过滤；纯日期 to 含当天；非法或倒置 → 400', async () => {
+    const jan = await createAppointment({
+      student: 'S_F',
+      mentor: 'T_X',
+      topic: '时间过滤 2025-01',
+      requestedTime: new Date('2025-01-15T02:00:00.000Z'),
+    });
+    const jun = await createAppointment({
+      student: 'S_F',
+      mentor: 'T_X',
+      topic: '时间过滤 2025-06',
+      requestedTime: new Date('2025-06-15T02:00:00.000Z'),
+    });
+    const dec = await createAppointment({
+      student: 'S_F',
+      mentor: 'T_X',
+      topic: '时间过滤 2025-12',
+      requestedTime: new Date('2025-12-15T02:00:00.000Z'),
+    });
+
+    const range = await listAs('S_F', '?from=2025-06-01&to=2025-06-30');
+    expect(range.total).toBe(1);
+    expect(range.list.map((row) => row.id)).toEqual([jun.id.toString()]);
+    expect(range.list.some((row) => row.id === jan.id.toString())).toBe(false);
+    expect(range.list.some((row) => row.id === dec.id.toString())).toBe(false);
+
+    // 纯日期 to 表示当天结束：23:59:59 的预约仍命中
+    const late = await createAppointment({
+      student: 'S_F',
+      mentor: 'T_X',
+      topic: '时间过滤 2025-06-30 当天末尾',
+      requestedTime: new Date('2025-06-30T23:59:59.000Z'),
+    });
+    const sameDay = await listAs('S_F', '?from=2025-06-30&to=2025-06-30');
+    expect(sameDay.list.map((row) => row.id)).toEqual([late.id.toString()]);
+
+    const bad = await api('S_F')
+      .get('/appointments?from=not-a-date')
+      .expect(400);
+    expectFieldError(bad, 'from');
+
+    const reversed = await api('S_F')
+      .get('/appointments?from=2025-07-01&to=2025-06-01')
+      .expect(400);
+    const reversedBody = reversed.body as ResponseEnvelope<null>;
+    expect(reversedBody.code).toBe(ErrorCode.PARAM_INVALID);
+    expect(reversedBody.message).toBe('from 必须不晚于 to');
   });
 
   it('判据 3：pageSize=101 → 400 / 10001；pageSize=100 正常', async () => {

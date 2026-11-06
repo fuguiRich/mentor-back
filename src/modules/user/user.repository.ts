@@ -94,6 +94,37 @@ export class UserRepository {
     return person?.personType ?? null;
   }
 
+  /**
+   * 学生档案展示字段（§2.1）：专业 / 行政班级 / 学院。
+   * 与 personType 同源，都是 `SysUser.username ↔ SyncPerson.login` 的自然键投影。
+   * 查不到人员行时返回 null——调用方按「未知」处理，不报错。
+   */
+  async findPersonProfileByUsername(username: string): Promise<{
+    personType: string;
+    major: string | null;
+    className: string | null;
+    orgUnitName: string;
+  } | null> {
+    const person = await this.prisma.client.syncPerson.findFirst({
+      where: { login: username },
+      select: {
+        personType: true,
+        major: true,
+        className: true,
+        orgUnit: { select: { name: true } },
+      },
+    });
+    if (person === null) {
+      return null;
+    }
+    return {
+      personType: person.personType,
+      major: person.major,
+      className: person.className,
+      orgUnitName: person.orgUnit.name,
+    };
+  }
+
   async findById(id: bigint): Promise<SysUser | null> {
     return this.prisma.client.sysUser.findFirst({ where: { id } });
   }

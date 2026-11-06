@@ -37,7 +37,7 @@ const ITEM_KEYS = [
   'summary',
 ].sort();
 
-/** 详情 = 列表项 + 这 5 个键 */
+/** 详情 = 列表项 + 这 6 个键 */
 const DETAIL_KEYS = [
   ...ITEM_KEYS,
   'affiliateOrg',
@@ -45,6 +45,7 @@ const DETAIL_KEYS = [
   'mobile',
   'researchAchievements',
   'socialRoles',
+  'timeSlots',
 ].sort();
 
 /**
@@ -677,6 +678,7 @@ describe('导师检索（学生侧）(e2e)', () => {
       affiliateOrg: '某某研究院',
       socialRoles: '某某学会理事',
       mobile: '13800000002',
+      timeSlots: [],
     });
 
     // 内校：affiliateOrg / socialRoles 为 null（R49），mobile 为 null 也照常返回
@@ -692,6 +694,24 @@ describe('导师检索（学生侧）(e2e)', () => {
       socialRoles: null,
       mobile: null,
     });
+
+    // 开放时段随详情返回：学生拿 `id` 直接发起预约，不需要 mentor:slot-manage
+    const withSlots = await api('S001')
+      .get(`/mentors/${profileId('mentor-a')}`)
+      .expect(200);
+    const withSlotsData = (
+      withSlots.body as ResponseEnvelope<MentorSearchDetailResponseDto>
+    ).data;
+    expect(withSlotsData.timeSlots).toEqual([
+      {
+        id: aWednesdaySlotId.toString(),
+        mentorProfileId: profileId('mentor-a'),
+        weekday: 3,
+        startTime: '09:00',
+        endTime: '11:00',
+        status: 1,
+      },
+    ]);
   });
 
   // ── 判据 13：详情负例（未生效 / 不存在）→ 404 / 31102 ────────────

@@ -77,6 +77,16 @@ export class UserService {
     return this.repository.findPersonTypeByUsername(username);
   }
 
+  /** 学生档案展示字段：专业 / 行政班级 / 学院（用于 /auth/profile） */
+  async findPersonProfileByUsername(username: string): Promise<{
+    personType: string;
+    major: string | null;
+    className: string | null;
+    orgUnitName: string;
+  } | null> {
+    return this.repository.findPersonProfileByUsername(username);
+  }
+
   async recordLogin(userId: bigint): Promise<void> {
     await this.repository.recordLogin(userId);
   }

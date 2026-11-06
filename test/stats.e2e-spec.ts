@@ -11,6 +11,10 @@ import type { AssessmentStatsResponseDto } from '../src/modules/stats/dto/assess
 import type { WorkbenchResponseDto } from '../src/modules/stats/dto/workbench.dto';
 import type { GuidanceStatsResponseDto } from '../src/modules/stats/dto/guidance-stats.dto';
 import type { MentorStatsResponseDto } from '../src/modules/stats/dto/mentor-stats.dto';
+import type {
+  MeRecordListResponseDto,
+  MeReviewListResponseDto,
+} from '../src/modules/stats/dto/me-record.dto';
 import { currentPeriod } from '../src/modules/assessment/assessment.constants';
 import {
   authedAgent,
@@ -952,6 +956,106 @@ describe('导师资源库统计（P4 Task 45）(e2e)', () => {
     );
     // 该学生名下 status = 6 的预约：beforeAll 的 1 条 + 判据 12 造的 1 条 = 2
     expect(lines).toHaveLength(4);
+  });
+
+  it('判据 26：学生 /me/records——两条已完成预约、记录与评价字段齐全', async () => {
+    const response = await api('stat-student')
+      .get('/me/records?page=1&pageSize=10')
+      .expect(200);
+    const data = (response.body as ResponseEnvelope<MeRecordListResponseDto>)
+      .data;
+
+    expect(data.total).toBe(3);
+    expect(data.page).toBe(1);
+    expect(data.pageSize).toBe(10);
+
+    const a1Row = data.list.find(
+      (row) =>
+        row.mentorName === 'stat-a1' && row.topic === '统计夹具：已完成的预约',
+    );
+    expect(a1Row).toMatchObject({
+      mentorName: 'stat-a1',
+      type: 1,
+      typeLabel: '双创竞赛指导',
+      actualTime: `${CURRENT_YEAR}-06-02T02:00:00.000Z`,
+      durationMinutes: 60,
+    });
+
+    const a1Type2Row = data.list.find((row) => row.topic === '指导统计夹具 2');
+    expect(a1Type2Row).toMatchObject({
+      mentorName: 'stat-a1',
+      type: 2,
+      typeLabel: '科研项目指导',
+      durationMinutes: 90,
+    });
+
+    const reviewed = data.list.find((row) => row.overallScore !== null);
+    expect(reviewed).toMatchObject({
+      attitude: 5,
+      expertise: 4,
+      effect: 4,
+      overallScore: '4.33',
+      comment: null,
+    });
+
+    // 可指导时间过滤：三条记录的 actualTime 都是 06-02
+    const sameDay = await api('stat-student')
+      .get('/me/records')
+      .query({ from: `${CURRENT_YEAR}-06-02`, to: `${CURRENT_YEAR}-06-02` })
+      .expect(200);
+    expect(
+      (sameDay.body as ResponseEnvelope<MeRecordListResponseDto>).data.total,
+    ).toBe(3);
+
+    // type=2 只有 A1 的第二条
+    const type2 = await api('stat-student')
+      .get('/me/records')
+      .query({ type: 2 })
+      .expect(200);
+    const type2Data = (type2.body as ResponseEnvelope<MeRecordListResponseDto>)
+      .data;
+    expect(type2Data.total).toBe(1);
+    expect(type2Data.list[0]).toMatchObject({ durationMinutes: 90 });
+  });
+
+  it('判据 27：学生 /me/reviews——只回本人的评价，按评价时间倒序', async () => {
+    const response = await api('stat-student')
+      .get('/me/reviews?page=1&pageSize=10')
+      .expect(200);
+    const data = (response.body as ResponseEnvelope<MeReviewListResponseDto>)
+      .data;
+
+    expect(data.total).toBe(1);
+    expect(typeof data.list[0]?.appointmentId).toBe('string');
+    expect(typeof data.list[0]?.mentorProfileId).toBe('string');
+    expect(data.list[0]).toMatchObject({
+      mentorName: 'stat-a1',
+      type: 1,
+      typeLabel: '双创竞赛指导',
+      topic: '统计夹具：已完成的预约',
+      attitude: 5,
+      expertise: 4,
+      effect: 4,
+      overallScore: '4.33',
+      comment: null,
+    });
+
+    const type2 = await api('stat-student')
+      .get('/me/reviews')
+      .query({ type: 2 })
+      .expect(200);
+    expect(
+      (type2.body as ResponseEnvelope<MeReviewListResponseDto>).data.total,
+    ).toBe(0);
+  });
+
+  it('判据 28：非学生调 /me/records / /me/reviews → 403 / 10003', async () => {
+    for (const path of ['/me/records', '/me/reviews']) {
+      const response = await api('stat-sc').get(path).expect(403);
+      expect((response.body as ResponseEnvelope<null>).code).toBe(
+        ErrorCode.FORBIDDEN,
+      );
+    }
   });
 
   it('判据 25：学生调导师名单导出 → 403 / 10003（名单类导出不给 self 范围）', async () => {

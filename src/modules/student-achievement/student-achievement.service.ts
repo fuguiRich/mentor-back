@@ -1,4 +1,4 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable, type StreamableFile } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { AppConfig } from '../../config/configuration';
 import { ErrorCode } from '../../common/constants/error-code';
@@ -19,6 +19,7 @@ import { addDays, todayInTimeZone } from '../archive/archive.time';
 import { toDateColumn } from '../achievement/achievement.mapper';
 import { ConfigService as SysConfigService } from '../config/config.service';
 import { DataScopeService } from '../data-scope/data-scope.service';
+import { FileService } from '../file/file.service';
 import { UserService } from '../user/user.service';
 import type { CreateStudentAchievementDto } from './dto/create-student-achievement.dto';
 import type { LinkStudentAchievementDto } from './dto/link-student-achievement.dto';
@@ -52,6 +53,7 @@ export class StudentAchievementService {
     private readonly users: UserService,
     private readonly dataScope: DataScopeService,
     private readonly sysConfig: SysConfigService,
+    private readonly fileService: FileService,
     config: ConfigService<AppConfig, true>,
   ) {
     this.timeZone = config.getOrThrow('app.timezone', { infer: true });
@@ -214,6 +216,85 @@ export class StudentAchievementService {
   }
 
   // ── 内部 ──────────────────────────────────────────────────────────
+
+  /** `GET /student-achievements/:id/proof/preview` —— 行内预览佐证 */
+  async previewProof(id: bigint, caller: RequestUser): Promise<StreamableFile> {
+    return this.serveProof(id, caller, 'inline');
+  }
+
+  /** `GET /student-achievements/:id/proof/download` —— 下载佐证 */
+  async downloadProof(
+    id: bigint,
+    caller: RequestUser,
+  ): Promise<StreamableFile> {
+    return this.serveProof(
+      id,
+      caller,
+      'attachment',
+      'application/octet-stream',
+    );
+  }
+
+  private async serveProof(
+    id: bigint,
+    caller: RequestUser,
+    disposition: 'inline' | 'attachment',
+    type?: string,
+  ): Promise<StreamableFile> {
+    const row = await this.repository.findById(id);
+    if (row === null) {
+      throw this.notFound();
+    }
+    await this.assertVisible(row, caller);
+    if (row.proofFileId === null) {
+      throw this.proofNotFound();
+    }
+    return this.fileService.serve(row.proofFileId, disposition, type);
+  }
+
+  /** 单条可见性：与列表同一套口径（all / 本院 / 本人） */
+  private async assertVisible(
+    row: {
+      studentPersonId: bigint;
+      mentorId: bigint | null;
+      deptId: bigint | null;
+    },
+    caller: RequestUser,
+  ): Promise<void> {
+    const scope = await this.resolveScope(caller);
+    if (scope.kind === 'all') {
+      return;
+    }
+    if (
+      scope.kind === 'depts' &&
+      row.deptId !== null &&
+      isDeptInFilter(scope, row.deptId)
+    ) {
+      return;
+    }
+    if (scope.kind === 'self') {
+      const own = await this.resolveSelf(caller);
+      if (own?.kind === 'student' && own.personId === row.studentPersonId) {
+        return;
+      }
+      if (
+        own?.kind === 'mentor' &&
+        row.mentorId !== null &&
+        own.mentorId === row.mentorId
+      ) {
+        return;
+      }
+    }
+    throw this.forbidden();
+  }
+
+  private proofNotFound(): BusinessException {
+    return new BusinessException(
+      ErrorCode.FILE_NOT_FOUND,
+      '文件不存在',
+      HttpStatus.NOT_FOUND,
+    );
+  }
 
   private async reload(id: bigint): Promise<StudentAchievementResponseDto> {
     const row = await this.repository.findById(id);

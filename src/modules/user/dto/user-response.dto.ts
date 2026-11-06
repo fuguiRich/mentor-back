@@ -95,4 +95,28 @@ export class UserResponseDto {
     nullable: true,
   })
   mentorType?: 'internal' | 'external' | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    description: '专业（SyncPerson.major）；学生档案展示用，非学生可能为空',
+    example: '软件工程',
+    nullable: true,
+  })
+  major?: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    description: '行政班级（SyncPerson.class_name）；学生档案展示用',
+    example: '软工 2023-1 班',
+    nullable: true,
+  })
+  className?: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    description: '所属组织 / 学院名称（SyncOrgUnit.name）；学生档案展示用',
+    example: '软件学院',
+    nullable: true,
+  })
+  orgUnitName?: string | null;
 }

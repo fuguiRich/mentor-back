@@ -159,11 +159,23 @@ const APPOINTMENT_PARTIES_INCLUDE = {
 export function buildAppointmentListWhere(params: {
   status?: number;
   type?: number;
+  from?: Date;
+  to?: Date;
   filter: AppointmentListFilter;
 }): Prisma.AppointmentWhereInput {
   const clauses: Prisma.AppointmentWhereInput[] = [
     ...(params.status === undefined ? [] : [{ status: params.status }]),
     ...(params.type === undefined ? [] : [{ type: params.type }]),
+    ...(params.from === undefined && params.to === undefined
+      ? []
+      : [
+          {
+            requestedTime: {
+              ...(params.from === undefined ? {} : { gte: params.from }),
+              ...(params.to === undefined ? {} : { lte: params.to }),
+            },
+          },
+        ]),
     ...appointmentFilterClauses(params.filter),
   ];
   return clauses.length === 0 ? {} : { AND: clauses };
@@ -730,6 +742,8 @@ export class AppointmentRepository {
   async findPage(params: {
     status?: number;
     type?: number;
+    from?: Date;
+    to?: Date;
     filter: AppointmentListFilter;
     page: number;
     pageSize: number;

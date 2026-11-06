@@ -5704,6 +5704,26 @@
                 5
               ]
             }
+          },
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "预约时间下界（含），按 `requestedTime` 过滤。ISO 8601；纯日期按 UTC 零点。与 `to` 同时给出时必须不晚于 `to`，否则 400 / 10001",
+            "schema": {
+              "example": "2026-01-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "预约时间上界（含），按 `requestedTime` 过滤。ISO 8601；纯日期表示当天 23:59:59.999（UTC）。与 `from` 同时给出时必须不早于 `from`，否则 400 / 10001",
+            "schema": {
+              "example": "2026-12-31",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -10518,6 +10538,188 @@
         ]
       }
     },
+    "/me/records": {
+      "get": {
+        "description": "只返回调用者本人 `status = 6 COMPLETED` 的预约，附带实际指导时间 / 时长与我的评价（未评价的字段为 null）。可按 `from` / `to`（ISO 8601）与 `type` 筛选；`from` / `to` 按实际指导时间过滤。",
+        "operationId": "MeRecordsController_listMyRecords",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "页码，从 1 开始；不传时为 1",
+            "schema": {
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "每页条数，最大 100；不传时为 20",
+            "schema": {
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "起始时间（含，ISO 8601）",
+            "schema": {
+              "example": "2026-01-01T00:00:00.000Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "结束时间（含，ISO 8601）",
+            "schema": {
+              "example": "2026-12-31T23:59:59.999Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "required": false,
+            "in": "query",
+            "description": "预约类型：1 双创竞赛 / 2 科研项目 / 3 创业实践 / 4 论文专利 / 5 其他",
+            "schema": {
+              "example": 1,
+              "type": "number",
+              "enum": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeRecordListResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数失败（10001）。管道校验失败时 data.fields 给出逐字段清单（schema 如右）；业务层参数失败时 data 为 null。详见全局说明",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "我的指导记录列表（学生）",
+        "tags": [
+          "统计"
+        ]
+      }
+    },
+    "/me/reviews": {
+      "get": {
+        "description": "只返回调用者本人写过的评价，按评价时间倒序。可按 `from` / `to`（ISO 8601）与 `type` 筛选；`from` / `to` 按评价时间过滤。",
+        "operationId": "MeRecordsController_listMyReviews",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "页码，从 1 开始；不传时为 1",
+            "schema": {
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "每页条数，最大 100；不传时为 20",
+            "schema": {
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "起始时间（含，ISO 8601）",
+            "schema": {
+              "example": "2026-01-01T00:00:00.000Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "结束时间（含，ISO 8601）",
+            "schema": {
+              "example": "2026-12-31T23:59:59.999Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "required": false,
+            "in": "query",
+            "description": "预约类型：1 双创竞赛 / 2 科研项目 / 3 创业实践 / 4 论文专利 / 5 其他",
+            "schema": {
+              "example": 1,
+              "type": "number",
+              "enum": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeReviewListResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数失败（10001）。管道校验失败时 data.fields 给出逐字段清单（schema 如右）；业务层参数失败时 data 为 null。详见全局说明",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "我的评价列表（学生）",
+        "tags": [
+          "统计"
+        ]
+      }
+    },
     "/me/records/export": {
       "get": {
         "description": "CSV（UTF-8 + BOM）。表头：`预约ID,导师姓名,预约类型,指导主题,实际指导时间,指导时长(分钟),我的评分,我的评价`。只含调用者本人 `status = 6 COMPLETED` 的预约。超过 `export.max_rows`（默认 50000）→ **409 / 37004**，不静默截断。",
@@ -11503,6 +11705,162 @@
         ]
       }
     },
+    "/student-achievements/{id}/proof/preview": {
+      "get": {
+        "description": "可见性与学生成果列表一致：本人 / 本院管理员 / 双创学院管理员。返回文件字节流，不是 JSON；没有佐证或文件已清理 → 404 / 28101。",
+        "operationId": "StudentAchievementController_previewProof",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "学生成果 ID（BIGINT 对外字符串）",
+            "schema": {
+              "example": "1",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "返回文件字节流（不是 JSON）"
+          },
+          "400": {
+            "description": "参数失败（10001）。管道校验失败时 data.fields 给出逐字段清单（schema 如右）；业务层参数失败时 data 为 null。详见全局说明",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "超出数据范围（403 / 10003）",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "example": {
+                    "code": 10003,
+                    "message": "无权限",
+                    "data": null
+                  }
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "example": {
+                    "code": 10003,
+                    "message": "无权限",
+                    "data": null
+                  }
+                }
+              },
+              "image/gif": {
+                "schema": {
+                  "example": {
+                    "code": 10003,
+                    "message": "无权限",
+                    "data": null
+                  }
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "example": {
+                    "code": 10003,
+                    "message": "无权限",
+                    "data": null
+                  }
+                }
+              },
+              "image/bmp": {
+                "schema": {
+                  "example": {
+                    "code": 10003,
+                    "message": "无权限",
+                    "data": null
+                  }
+                }
+              },
+              "application/pdf": {
+                "schema": {
+                  "example": {
+                    "code": 10003,
+                    "message": "无权限",
+                    "data": null
+                  }
+                }
+              },
+              "application/octet-stream": {
+                "schema": {
+                  "example": {
+                    "code": 10003,
+                    "message": "无权限",
+                    "data": null
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "行内预览学生成果佐证",
+        "tags": [
+          "学生成果"
+        ]
+      }
+    },
+    "/student-achievements/{id}/proof/download": {
+      "get": {
+        "description": "可见性同预览；Content-Disposition: attachment。",
+        "operationId": "StudentAchievementController_downloadProof",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "学生成果 ID（BIGINT 对外字符串）",
+            "schema": {
+              "example": "1",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "返回文件字节流（不是 JSON）"
+          },
+          "400": {
+            "description": "参数失败（10001）。管道校验失败时 data.fields 给出逐字段清单（schema 如右）；业务层参数失败时 data 为 null。详见全局说明",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "超出数据范围（403 / 10003）",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "example": {
+                    "code": 10003,
+                    "message": "无权限",
+                    "data": null
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "下载学生成果佐证",
+        "tags": [
+          "学生成果"
+        ]
+      }
+    },
     "/student-achievements/{id}/link": {
       "patch": {
         "description": "请求体 `{ mentorProfileId }`。同一事务：生成导师 `Achievement` → 回填 `achievementId` → 落 `core=0` 归档。已关联再 link → **409 / 39002**；成果不存在 → **404 / 39001**；导师不存在 / 未生效 → **404 / 31102**。",
@@ -11937,6 +12295,24 @@
             ],
             "nullable": true
           },
+          "major": {
+            "type": "string",
+            "description": "专业（SyncPerson.major）；学生档案展示用，非学生可能为空",
+            "example": "软件工程",
+            "nullable": true
+          },
+          "className": {
+            "type": "string",
+            "description": "行政班级（SyncPerson.class_name）；学生档案展示用",
+            "example": "软工 2023-1 班",
+            "nullable": true
+          },
+          "orgUnitName": {
+            "type": "string",
+            "description": "所属组织 / 学院名称（SyncOrgUnit.name）；学生档案展示用",
+            "example": "软件学院",
+            "nullable": true
+          },
           "roleIds": {
             "description": "已分配的角色 ID 集合",
             "example": [
@@ -12238,6 +12614,24 @@
               "internal",
               "external"
             ],
+            "nullable": true
+          },
+          "major": {
+            "type": "string",
+            "description": "专业（SyncPerson.major）；学生档案展示用，非学生可能为空",
+            "example": "软件工程",
+            "nullable": true
+          },
+          "className": {
+            "type": "string",
+            "description": "行政班级（SyncPerson.class_name）；学生档案展示用",
+            "example": "软工 2023-1 班",
+            "nullable": true
+          },
+          "orgUnitName": {
+            "type": "string",
+            "description": "所属组织 / 学院名称（SyncOrgUnit.name）；学生档案展示用",
+            "example": "软件学院",
             "nullable": true
           }
         },
@@ -14817,6 +15211,62 @@
           "pageSize"
         ]
       },
+      "MentorTimeSlotDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "时段 ID（BIGINT 对外字符串）",
+            "example": "12"
+          },
+          "mentorProfileId": {
+            "type": "string",
+            "description": "导师专业档案 ID",
+            "example": "1"
+          },
+          "weekday": {
+            "type": "number",
+            "description": "星期：1 周一 … 7 周日",
+            "example": 3,
+            "enum": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7
+            ]
+          },
+          "startTime": {
+            "type": "string",
+            "description": "开始时间 HH:mm",
+            "example": "09:00"
+          },
+          "endTime": {
+            "type": "string",
+            "description": "结束时间 HH:mm",
+            "example": "11:00"
+          },
+          "status": {
+            "type": "number",
+            "description": "状态：0 关闭 / 1 开放。详情只返回开放的时段，恒为 1",
+            "example": 1,
+            "enum": [
+              0,
+              1
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "mentorProfileId",
+          "weekday",
+          "startTime",
+          "endTime",
+          "status"
+        ]
+      },
       "MentorSearchDetailResponseDto": {
         "type": "object",
         "properties": {
@@ -14896,6 +15346,13 @@
             "description": "联系电话（SyncPerson.mobile）；未填为 null",
             "example": "13800000000",
             "nullable": true
+          },
+          "timeSlots": {
+            "description": "当前开放（status = 1）且未软删的可指导时段，按星期 / 开始时间升序。发起预约时从这里取 `id` 作为 `slotId`。",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MentorTimeSlotDto"
+            }
           }
         },
         "required": [
@@ -14910,7 +15367,8 @@
           "guidanceExperience",
           "affiliateOrg",
           "socialRoles",
-          "mobile"
+          "mobile",
+          "timeSlots"
         ]
       },
       "SlotResponseDto": {
@@ -17726,6 +18184,245 @@
           "byDept",
           "byMentorType",
           "byResearchField"
+        ]
+      },
+      "MeRecordResponseDto": {
+        "type": "object",
+        "properties": {
+          "appointmentId": {
+            "type": "string",
+            "description": "预约 ID",
+            "example": "1"
+          },
+          "mentorProfileId": {
+            "type": "string",
+            "description": "导师档案 ID",
+            "example": "1"
+          },
+          "mentorName": {
+            "type": "string",
+            "description": "导师姓名",
+            "example": "张明远"
+          },
+          "type": {
+            "type": "number",
+            "description": "预约类型：1-5",
+            "example": 1
+          },
+          "typeLabel": {
+            "type": "string",
+            "description": "预约类型名称",
+            "example": "双创竞赛指导"
+          },
+          "topic": {
+            "type": "string",
+            "description": "指导主题",
+            "example": "挑战杯项目选题与打磨"
+          },
+          "actualTime": {
+            "type": "string",
+            "description": "实际指导时间（ISO 8601）；记录未填时为 null",
+            "nullable": true,
+            "example": "2026-11-01T02:00:00.000Z"
+          },
+          "durationMinutes": {
+            "type": "number",
+            "description": "指导时长（分钟）；记录未填时为 null",
+            "nullable": true,
+            "example": 60
+          },
+          "attitude": {
+            "type": "number",
+            "description": "指导态度 1-5；未评价为 null",
+            "nullable": true
+          },
+          "expertise": {
+            "type": "number",
+            "description": "专业能力 1-5；未评价为 null",
+            "nullable": true
+          },
+          "effect": {
+            "type": "number",
+            "description": "指导效果 1-5；未评价为 null",
+            "nullable": true
+          },
+          "overallScore": {
+            "type": "string",
+            "description": "三维度均分，2 位小数；未评价为 null",
+            "nullable": true,
+            "example": "4.33"
+          },
+          "comment": {
+            "type": "string",
+            "description": "文字评价；未填为 null",
+            "nullable": true,
+            "example": "讲解清晰。"
+          }
+        },
+        "required": [
+          "appointmentId",
+          "mentorProfileId",
+          "mentorName",
+          "type",
+          "typeLabel",
+          "topic",
+          "actualTime",
+          "durationMinutes",
+          "attitude",
+          "expertise",
+          "effect",
+          "overallScore",
+          "comment"
+        ]
+      },
+      "MeRecordListResponseDto": {
+        "type": "object",
+        "properties": {
+          "list": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MeRecordResponseDto"
+            }
+          },
+          "total": {
+            "type": "number",
+            "description": "总条数",
+            "example": 12
+          },
+          "page": {
+            "type": "number",
+            "description": "当前页码",
+            "example": 1
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "每页条数",
+            "example": 20
+          }
+        },
+        "required": [
+          "list",
+          "total",
+          "page",
+          "pageSize"
+        ]
+      },
+      "MeReviewResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "评价 ID",
+            "example": "1"
+          },
+          "appointmentId": {
+            "type": "string",
+            "description": "预约 ID",
+            "example": "1"
+          },
+          "mentorProfileId": {
+            "type": "string",
+            "description": "导师档案 ID",
+            "example": "1"
+          },
+          "mentorName": {
+            "type": "string",
+            "description": "导师姓名",
+            "example": "张明远"
+          },
+          "type": {
+            "type": "number",
+            "description": "预约类型：1-5",
+            "example": 1
+          },
+          "typeLabel": {
+            "type": "string",
+            "description": "预约类型名称",
+            "example": "双创竞赛指导"
+          },
+          "topic": {
+            "type": "string",
+            "description": "指导主题",
+            "example": "挑战杯项目选题与打磨"
+          },
+          "attitude": {
+            "type": "number",
+            "description": "指导态度 1-5",
+            "example": 5
+          },
+          "expertise": {
+            "type": "number",
+            "description": "专业能力 1-5",
+            "example": 4
+          },
+          "effect": {
+            "type": "number",
+            "description": "指导效果 1-5",
+            "example": 4
+          },
+          "overallScore": {
+            "type": "string",
+            "description": "三维度均分，2 位小数",
+            "example": "4.33"
+          },
+          "comment": {
+            "type": "string",
+            "description": "文字评价；未填为 null",
+            "nullable": true,
+            "example": "讲解清晰。"
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "评价时间（ISO 8601）",
+            "example": "2026-11-01T03:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "appointmentId",
+          "mentorProfileId",
+          "mentorName",
+          "type",
+          "typeLabel",
+          "topic",
+          "attitude",
+          "expertise",
+          "effect",
+          "overallScore",
+          "comment",
+          "createdAt"
+        ]
+      },
+      "MeReviewListResponseDto": {
+        "type": "object",
+        "properties": {
+          "list": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MeReviewResponseDto"
+            }
+          },
+          "total": {
+            "type": "number",
+            "description": "总条数",
+            "example": 12
+          },
+          "page": {
+            "type": "number",
+            "description": "当前页码",
+            "example": 1
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "每页条数",
+            "example": 20
+          }
+        },
+        "required": [
+          "list",
+          "total",
+          "page",
+          "pageSize"
         ]
       },
       "CreateArchiveDto": {

@@ -1,4 +1,4 @@
-import { Controller, Get, Res } from '@nestjs/common';
+import { Controller, Get, Query, Res } from '@nestjs/common';
 import {
   ApiOkResponse,
   ApiOperation,
@@ -12,6 +12,11 @@ import { NoEnvelope } from '../../common/decorators/no-envelope.decorator';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import type { RequestUser } from '../../common/context/request-context';
 import { startCsv } from './export/csv.writer';
+import {
+  MeRecordListResponseDto,
+  MeReviewListResponseDto,
+  QueryMyRecordDto,
+} from './dto/me-record.dto';
 import { StatsService } from './stats.service';
 
 /**
@@ -26,6 +31,41 @@ import { StatsService } from './stats.service';
 @Controller('me')
 export class MeRecordsController {
   constructor(private readonly statsService: StatsService) {}
+
+  @Get('records')
+  @RequirePermission('stats:guidance')
+  @DataScope('self')
+  @ApiOperation({
+    summary: '我的指导记录列表（学生）',
+    description:
+      '只返回调用者本人 `status = 6 COMPLETED` 的预约，附带实际指导时间 / 时长' +
+      '与我的评价（未评价的字段为 null）。可按 `from` / `to`（ISO 8601）与 ' +
+      '`type` 筛选；`from` / `to` 按实际指导时间过滤。',
+  })
+  @ApiOkResponse({ type: MeRecordListResponseDto })
+  async listMyRecords(
+    @CurrentUser() caller: RequestUser,
+    @Query() query: QueryMyRecordDto,
+  ): Promise<MeRecordListResponseDto> {
+    return this.statsService.listStudentRecords(caller, query);
+  }
+
+  @Get('reviews')
+  @RequirePermission('stats:guidance')
+  @DataScope('self')
+  @ApiOperation({
+    summary: '我的评价列表（学生）',
+    description:
+      '只返回调用者本人写过的评价，按评价时间倒序。可按 `from` / `to`（ISO 8601）' +
+      '与 `type` 筛选；`from` / `to` 按评价时间过滤。',
+  })
+  @ApiOkResponse({ type: MeReviewListResponseDto })
+  async listMyReviews(
+    @CurrentUser() caller: RequestUser,
+    @Query() query: QueryMyRecordDto,
+  ): Promise<MeReviewListResponseDto> {
+    return this.statsService.listStudentReviews(caller, query);
+  }
 
   @Get('records/export')
   @NoEnvelope()

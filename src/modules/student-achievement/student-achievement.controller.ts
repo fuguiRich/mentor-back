@@ -9,6 +9,7 @@ import {
   Patch,
   Post,
   Query,
+  StreamableFile,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -19,10 +20,12 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiProduces,
   ApiTags,
 } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { DataScope } from '../../common/decorators/data-scope.decorator';
+import { NoEnvelope } from '../../common/decorators/no-envelope.decorator';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { ErrorCode } from '../../common/constants/error-code';
 import type { RequestUser } from '../../common/context/request-context';
@@ -107,6 +110,64 @@ export class StudentAchievementController {
     @CurrentUser() caller: RequestUser,
   ): Promise<StudentAchievementListResponseDto> {
     return this.studentAchievementService.list(query, caller);
+  }
+
+  @Get(':id/proof/preview')
+  @NoEnvelope()
+  @RequirePermission('student-achievement:list')
+  @DataScope('all')
+  @ApiOperation({
+    summary: '行内预览学生成果佐证',
+    description:
+      '可见性与学生成果列表一致：本人 / 本院管理员 / 双创学院管理员。' +
+      '返回文件字节流，不是 JSON；没有佐证或文件已清理 → 404 / 28101。',
+  })
+  @ApiProduces(
+    'image/png',
+    'image/jpeg',
+    'image/gif',
+    'image/webp',
+    'image/bmp',
+    'application/pdf',
+    'application/octet-stream',
+  )
+  @ApiOkResponse({ description: '返回文件字节流（不是 JSON）' })
+  @ApiForbiddenResponse({
+    description: '超出数据范围（403 / 10003）',
+    schema: { example: errExample(ErrorCode.FORBIDDEN, '无权限') },
+  })
+  async previewProof(
+    @Param() params: StudentAchievementParamDto,
+    @CurrentUser() caller: RequestUser,
+  ): Promise<StreamableFile> {
+    return this.studentAchievementService.previewProof(
+      BigInt(params.id),
+      caller,
+    );
+  }
+
+  @Get(':id/proof/download')
+  @NoEnvelope()
+  @RequirePermission('student-achievement:list')
+  @DataScope('all')
+  @ApiOperation({
+    summary: '下载学生成果佐证',
+    description: '可见性同预览；Content-Disposition: attachment。',
+  })
+  @ApiProduces('application/octet-stream')
+  @ApiOkResponse({ description: '返回文件字节流（不是 JSON）' })
+  @ApiForbiddenResponse({
+    description: '超出数据范围（403 / 10003）',
+    schema: { example: errExample(ErrorCode.FORBIDDEN, '无权限') },
+  })
+  async downloadProof(
+    @Param() params: StudentAchievementParamDto,
+    @CurrentUser() caller: RequestUser,
+  ): Promise<StreamableFile> {
+    return this.studentAchievementService.downloadProof(
+      BigInt(params.id),
+      caller,
+    );
   }
 
   @Patch(':id/link')

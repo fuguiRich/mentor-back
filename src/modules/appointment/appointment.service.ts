@@ -455,9 +455,25 @@ export class AppointmentService {
     caller: RequestUser,
   ): Promise<AppointmentListResponseDto> {
     const filter = await this.resolveListFilter(caller);
+    const from = query.from === undefined ? undefined : new Date(query.from);
+    const to =
+      query.to === undefined ? undefined : this.upperBoundary(query.to);
+    if (
+      from !== undefined &&
+      to !== undefined &&
+      from.getTime() > to.getTime()
+    ) {
+      throw new BusinessException(
+        ErrorCode.PARAM_INVALID,
+        'from 必须不晚于 to',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
     const { rows, total } = await this.repository.findPage({
       ...(query.status === undefined ? {} : { status: query.status }),
       ...(query.type === undefined ? {} : { type: query.type }),
+      ...(from === undefined ? {} : { from }),
+      ...(to === undefined ? {} : { to }),
       filter,
       page: query.page,
       pageSize: query.pageSize,
@@ -469,6 +485,18 @@ export class AppointmentService {
       page: query.page,
       pageSize: query.pageSize,
     };
+  }
+
+  /**
+   * 列表时间上界：纯日期 `YYYY-MM-DD` 表示「当天结束」。
+   * `new Date('2026-12-31')` 是 UTC 零点，直接当上界会把当天整天漏掉。
+   */
+  private upperBoundary(value: string): Date {
+    const parsed = new Date(value);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      parsed.setUTCHours(23, 59, 59, 999);
+    }
+    return parsed;
   }
 
   /**

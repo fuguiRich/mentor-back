@@ -5,7 +5,10 @@ import {
   MentorSearchDetailResponseDto,
   MentorSearchItemResponseDto,
 } from './dto/mentor-search-response.dto';
-import type { MentorSearchRow } from './mentor-search.repository';
+import type {
+  MentorSearchDetailRow,
+  MentorSearchRow,
+} from './mentor-search.repository';
 
 /**
  * 检索结果 → Response DTO 的显式映射（RES-04）。
@@ -26,7 +29,7 @@ export class MentorSearchMapper {
     return this.toItemFrom(row, this.toProfile(row));
   }
 
-  toDetail(row: MentorSearchRow): MentorSearchDetailResponseDto {
+  toDetail(row: MentorSearchDetailRow): MentorSearchDetailResponseDto {
     const profile = this.toProfile(row);
     return {
       ...this.toItemFrom(row, profile),
@@ -37,6 +40,14 @@ export class MentorSearchMapper {
       affiliateOrg: profile.affiliateOrg,
       socialRoles: profile.socialRoles,
       mobile: row.person.mobile,
+      timeSlots: row.timeSlots.map((slot) => ({
+        id: slot.id.toString(),
+        mentorProfileId: slot.mentorProfileId.toString(),
+        weekday: slot.weekday,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+        status: slot.status,
+      })),
     };
   }
 
