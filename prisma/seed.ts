@@ -40,7 +40,7 @@ const SEED_ROLES = [
     name: '二级学院管理员',
     dataScope: 'deptAndChildren',
   },
-  { code: 'sc_admin', name: '双创学院管理员', dataScope: 'all' },
+  { code: 'sc_admin', name: '创新创业学院管理员', dataScope: 'all' },
 ] as const;
 
 /**
@@ -526,17 +526,20 @@ const DEMO_ORGS: readonly DemoOrgSpec[] = [
 interface DemoPersonSpec {
   login: string;
   realName: string;
-  personType: 'internalMentor' | 'externalMentor' | 'student';
+  personType: 'internalMentor' | 'externalMentor' | 'teacher' | 'student';
   orgCode: string;
   roles: readonly string[];
 }
 
 /**
- * 同步源里会有的人：三个导师（两个内校、一个外校）+ 两个学生。
+ * 同步源里会有的人：三个导师（两个内校、一个外校）+ 一个尚未入驻的教师
+ * + 两个学生。
  *
  * `T002` 是外校导师——`affiliateOrg` / `socialRoles` 只有外校能填（R49），
  * 没有外校样本，那两个字段的正常路径就测不到。
  * `T003` 在外国语学院——外院的人，用来测数据范围的负断言。
+ * `T004` 是**只有 teacher 角色、没有导师档案**的教师：用来走
+ * 「建档 → 提交入驻申请 → 审核通过后加 mentor 角色」的完整链路。
  * 两个学生是**故意的**：预约、评价、成果里凡是有「本人 / 他人」区分的断言，
  * 只有一个学生就只能测到正路径；`S002` 用来测「别人的预约看不到」。
  */
@@ -561,6 +564,13 @@ const DEMO_PEOPLE: readonly DemoPersonSpec[] = [
     personType: 'internalMentor',
     orgCode: 'FL',
     roles: ['mentor'],
+  },
+  {
+    login: 'T004',
+    realName: '周文博',
+    personType: 'teacher',
+    orgCode: 'CS',
+    roles: ['teacher'],
   },
   {
     login: 'S001',
@@ -602,7 +612,7 @@ const DEMO_ADMINS: readonly DemoPersonSpec[] = [
   },
   {
     login: 'sc_admin',
-    realName: '双创学院管理员',
+    realName: '创新创业学院管理员',
     personType: 'internalMentor',
     orgCode: 'HQ',
     roles: ['sc_admin'],
