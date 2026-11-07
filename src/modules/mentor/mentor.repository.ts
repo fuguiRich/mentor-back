@@ -176,6 +176,17 @@ export class MentorRepository {
       : client.mentorProfile.update({ where: { id }, data });
   }
 
+  /** 只改联系电话；`null` = 清除覆盖，回退到同步源手机号 */
+  async updateContact(
+    id: bigint,
+    contactMobile: string | null,
+  ): Promise<MentorProfile> {
+    return this.prisma.client.mentorProfile.update({
+      where: { id },
+      data: { contactMobile },
+    });
+  }
+
   /**
    * 后台改档（Task 18）——**一次事务四步**，拆开就出事：
    *

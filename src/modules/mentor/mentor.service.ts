@@ -15,6 +15,7 @@ import {
   MENTOR_PROFILE_STATUS,
   MENTOR_PROFILE_WRITABLE_STATUSES,
   MentorProfileResponseDto,
+  UpdateMentorContactDto,
   UpdateMentorProfileDto,
 } from './dto/mentor-profile.dto';
 import {
@@ -106,6 +107,29 @@ export class MentorService {
     // R55：status ∉ {0 DRAFT, 3 REJECTED} 的行不许被 PUT 改到（409 / 31103）
     this.assertWritableStatus(existing.status);
     const updated = await this.repository.updateDraft(existing.id, draft);
+    return toMentorProfileResponse(updated, person.personType);
+  }
+
+  /**
+   * `PUT /mentor/profile/contact` —— 导师本人维护联系电话。
+   *
+   * 联系电话是**联系方式**，不是专业资格：不走进驻 / 信息修改申请的审核流，
+   * 也不受 R55 的 status 门约束（已生效的导师随时能改）。`null` = 清除覆盖，
+   * 展示时回退到同步源的 `SyncPerson.mobile`。
+   */
+  async updateMyContact(
+    dto: UpdateMentorContactDto,
+    caller: RequestUser,
+  ): Promise<MentorProfileResponseDto> {
+    const person = await this.resolveMentorPerson(caller);
+    const profile = await this.repository.findByPersonId(person.id);
+    if (profile === null) {
+      throw this.notFound();
+    }
+    const updated = await this.repository.updateContact(
+      profile.id,
+      dto.contactMobile,
+    );
     return toMentorProfileResponse(updated, person.personType);
   }
 

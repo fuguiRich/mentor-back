@@ -481,6 +481,9 @@ model MentorProfile {
   /// 职称 / 资质，自由文本 ≤100（R28）。**内校 / 外校都填**——与 affiliateOrg /
   /// socialRoles 不同，内校不置 NULL。P2 检索条件（§2.1）与展示字段（§3.1）
   professionalTitle  String? @map("professional_title")     @db.VarChar(100)
+  /// 导师本人维护的联系电话。NULL = 回退到同步源的 SyncPerson.mobile；
+  /// 非 NULL = 覆盖展示值（同步不会覆盖这一列）
+  contactMobile      String? @map("contact_mobile")         @db.VarChar(20)
 
   createdAt  DateTime  @default(now()) @map("created_at") @db.DateTime(3)
   updatedAt  DateTime  @default(now()) @map("updated_at") @db.DateTime(3)

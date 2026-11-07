@@ -142,7 +142,9 @@ export class MentorSearchDetailResponseDto extends MentorSearchItemResponseDto {
 
   @ApiProperty({
     type: String,
-    description: '联系电话（SyncPerson.mobile）；未填为 null',
+    description:
+      '联系电话：导师本人维护的 MentorProfile.contactMobile 优先；' +
+      '未填时回退 SyncPerson.mobile；都为空为 null',
     example: '13800000000',
     nullable: true,
   })

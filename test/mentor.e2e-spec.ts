@@ -319,6 +319,66 @@ describe('导师专业档案 (e2e)', () => {
     });
   });
 
+  it('判据 4b：联系电话可单独维护；null 清除；非法 / 学生 / 未建档各按码拒绝', async () => {
+    const updated = await api('mentor-a')
+      .put('/mentor/profile/contact')
+      .send({ contactMobile: '13800138000' })
+      .expect(200);
+    expect(
+      (updated.body as ResponseEnvelope<MentorProfileResponseDto>).data
+        .contactMobile,
+    ).toBe('13800138000');
+
+    const got = await api('mentor-a').get('/mentor/profile').expect(200);
+    expect(
+      (got.body as ResponseEnvelope<MentorProfileResponseDto>).data
+        .contactMobile,
+    ).toBe('13800138000');
+
+    const row = await prisma.client.mentorProfile.findFirst({
+      where: { personId: personId('mentor-a') },
+    });
+    expect(row?.contactMobile).toBe('13800138000');
+
+    // null = 清除覆盖，回退到同步源手机号
+    const cleared = await api('mentor-a')
+      .put('/mentor/profile/contact')
+      .send({ contactMobile: null })
+      .expect(200);
+    expect(
+      (cleared.body as ResponseEnvelope<MentorProfileResponseDto>).data
+        .contactMobile,
+    ).toBeNull();
+
+    const invalid = await api('mentor-a')
+      .put('/mentor/profile/contact')
+      .send({ contactMobile: '123' })
+      .expect(400);
+    const invalidBody = invalid.body as ResponseEnvelope<{
+      fields: FieldErrorDto[];
+    }>;
+    expect(invalidBody.code).toBe(ErrorCode.PARAM_INVALID);
+    expect(
+      invalidBody.data.fields.some((field) => field.field === 'contactMobile'),
+    ).toBe(true);
+
+    const student = await api('student-a')
+      .put('/mentor/profile/contact')
+      .send({ contactMobile: '13800138000' })
+      .expect(403);
+    expect((student.body as ResponseEnvelope<null>).code).toBe(
+      ErrorCode.FORBIDDEN,
+    );
+
+    const noProfile = await api('mentor-b')
+      .put('/mentor/profile/contact')
+      .send({ contactMobile: '13800138000' })
+      .expect(404);
+    expect((noProfile.body as ResponseEnvelope<null>).code).toBe(
+      ErrorCode.MENTOR_PROFILE_NOT_FOUND,
+    );
+  });
+
   it('判据 5：mentorType 两分支——internalMentor→internal，externalMentor→external', async () => {
     const internal = await api('mentor-a').get('/mentor/profile').expect(200);
     expect(

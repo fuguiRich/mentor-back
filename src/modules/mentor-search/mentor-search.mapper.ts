@@ -39,7 +39,8 @@ export class MentorSearchMapper {
       guidanceExperience: profile.guidanceExperience,
       affiliateOrg: profile.affiliateOrg,
       socialRoles: profile.socialRoles,
-      mobile: row.person.mobile,
+      // 导师本人维护的联系电话优先；未填时回退同步源手机号
+      mobile: row.contactMobile ?? row.person.mobile,
       timeSlots: row.timeSlots.map((slot) => ({
         id: slot.id.toString(),
         mentorProfileId: slot.mentorProfileId.toString(),

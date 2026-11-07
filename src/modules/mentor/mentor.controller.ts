@@ -18,16 +18,18 @@ import { RequirePermission } from '../../common/decorators/require-permission.de
 import { MentorService, type AdminUpdateRequestMeta } from './mentor.service';
 import {
   MentorProfileResponseDto,
+  UpdateMentorContactDto,
   UpdateMentorProfileDto,
 } from './dto/mentor-profile.dto';
 import { MentorProfileParamDto } from './dto/mentor-profile-param.dto';
 
 /**
- * 导师专业档案（Task 11 + 12 + 18）——**恰好 3 条路由**。
+ * 导师专业档案（Task 11 + 12 + 18）——**恰好 4 条路由**。
  *
  * `MentorProfile` 是「我本人的专业档案」，一人一行、挂在 `SyncPerson` 上：
- * 「我的」两条没有按 id 的入参（只能改自己的），首次建档走 `PUT`（upsert）。
- * 第三条 `PUT /mentor/profiles/:id` 是 Task 18 给双创学院管理员的**后台改档**
+ * 「我的」三条没有按 id 的入参（只能改自己的），首次建档走 `PUT`（upsert）；
+ * `PUT /mentor/profile/contact` 单独维护联系电话（不走审核流）。
+ * 第四条 `PUT /mentor/profiles/:id` 是 Task 18 给双创学院管理员的**后台改档**
  * 口子——必须留痕（落库与 `SysOpLog` 同一次事务），权限码 + 数据范围双重把关。
  */
 @ApiTags('导师档案')
@@ -146,6 +148,42 @@ export class MentorController {
     @CurrentUser() caller: RequestUser,
   ): Promise<MentorProfileResponseDto> {
     return this.mentorService.upsertMyProfile(dto, caller);
+  }
+
+  @Put('profile/contact')
+  @RequirePermission('mentor:profile-update')
+  @DataScope('self')
+  @ApiOperation({
+    summary: '维护我的联系电话',
+    description:
+      '联系电话是联系方式、不是专业资格：**不走进驻 / 信息修改申请的审核流**，' +
+      '也不受档案 status 门约束（已生效导师随时可改）。' +
+      '请求体 `{ contactMobile }`：6-20 位，可含 `+` / `-` / 空格 / 括号；' +
+      '`null` = 清除覆盖，展示时回退到同步源的 `SyncPerson.mobile`。' +
+      '未建档 → 404 / 31102；调用者不是导师 → 403 / 10003。',
+  })
+  @ApiOkResponse({
+    type: MentorProfileResponseDto,
+    description: '保存成功，返回更新后的档案（含 contactMobile）',
+  })
+  @ApiNotFoundResponse({
+    description: '未建档（404 / 31102）',
+    schema: {
+      example: errExample(
+        ErrorCode.MENTOR_PROFILE_NOT_FOUND,
+        '导师专业档案不存在',
+      ),
+    },
+  })
+  @ApiForbiddenResponse({
+    description: '调用者不是导师（403 / 10003）',
+    schema: { example: errExample(ErrorCode.FORBIDDEN, '无权限') },
+  })
+  async updateMyContact(
+    @Body() dto: UpdateMentorContactDto,
+    @CurrentUser() caller: RequestUser,
+  ): Promise<MentorProfileResponseDto> {
+    return this.mentorService.updateMyContact(dto, caller);
   }
 
   @Put('profiles/:id')

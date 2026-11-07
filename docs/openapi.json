@@ -3567,6 +3567,77 @@
         ]
       }
     },
+    "/mentor/profile/contact": {
+      "put": {
+        "description": "联系电话是联系方式、不是专业资格：**不走进驻 / 信息修改申请的审核流**，也不受档案 status 门约束（已生效导师随时可改）。请求体 `{ contactMobile }`：6-20 位，可含 `+` / `-` / 空格 / 括号；`null` = 清除覆盖，展示时回退到同步源的 `SyncPerson.mobile`。未建档 → 404 / 31102；调用者不是导师 → 403 / 10003。",
+        "operationId": "MentorController_updateMyContact",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMentorContactDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "保存成功，返回更新后的档案（含 contactMobile）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MentorProfileResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数失败（10001）。管道校验失败时 data.fields 给出逐字段清单（schema 如右）；业务层参数失败时 data 为 null。详见全局说明",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "调用者不是导师（403 / 10003）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "example": {
+                    "code": 10003,
+                    "message": "无权限",
+                    "data": null
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "未建档（404 / 31102）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "example": {
+                    "code": 31102,
+                    "message": "导师专业档案不存在",
+                    "data": null
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "维护我的联系电话",
+        "tags": [
+          "导师档案"
+        ]
+      }
+    },
     "/mentor/profiles/{id}": {
       "put": {
         "description": "双创学院管理员纠正**任意导师**的 7 个可填报字段（审核通过的档案录错了也得能改）。权限码 `mentor:admin-update`；数据范围天花板 **`all`**（不夹窄，角色的 data_scope 自己收窄，越权 **403 / 10003**）。请求体是 `UpdateMentorProfileDto`（复用，不复制）：**增量语义**——省略 = 不动、显式 null = 清空、researchFields 传数组 = 整体替换；`id` / `personId` / `mentorType` / `status` / 未知字段一律 **400 / 10001**。**status 由审核流驱动，本接口没有写口**；但管理员是纠数据，不看流程态——status 0–5 的行都能改。**R49**：内校导师的 affiliateOrg / socialRoles 落库恒置 null（不是 400）。`:id` 不存在或已软删 → **404 / 31102**。**每次成功都落一行 SysOpLog**（targetType=mentorProfile，before / after 是 7 字段完整快照），且与落库**同一次事务**：留痕写失败则字段也回滚（不留痕的修改入口一律不给）。",
@@ -14633,6 +14704,12 @@
             "example": "教授",
             "nullable": true
           },
+          "contactMobile": {
+            "type": "string",
+            "description": "导师本人维护的联系电话；NULL 表示回退到同步源的 SyncPerson.mobile",
+            "example": "13800000000",
+            "nullable": true
+          },
           "status": {
             "type": "number",
             "description": "档案状态：0 DRAFT | 1 PENDING | 2 APPROVED | 3 REJECTED | 4 FROZEN | 5 REMOVED。**由审核流驱动，接口不得直接改**——请求体里出现 status 一律 400（10001）",
@@ -14658,6 +14735,7 @@
           "affiliateOrg",
           "socialRoles",
           "professionalTitle",
+          "contactMobile",
           "status"
         ]
       },
@@ -14712,6 +14790,20 @@
             "nullable": true
           }
         }
+      },
+      "UpdateMentorContactDto": {
+        "type": "object",
+        "properties": {
+          "contactMobile": {
+            "type": "string",
+            "description": "联系电话，6-20 位，可含数字 / `+` / `-` / 空格 / 括号；**传 null 表示清除覆盖**（回退到 SyncPerson.mobile）",
+            "example": "13800000000",
+            "nullable": true
+          }
+        },
+        "required": [
+          "contactMobile"
+        ]
       },
       "SubmitOnboardDto": {
         "type": "object",
@@ -15343,7 +15435,7 @@
           },
           "mobile": {
             "type": "string",
-            "description": "联系电话（SyncPerson.mobile）；未填为 null",
+            "description": "联系电话：导师本人维护的 MentorProfile.contactMobile 优先；未填时回退 SyncPerson.mobile；都为空为 null",
             "example": "13800000000",
             "nullable": true
           },

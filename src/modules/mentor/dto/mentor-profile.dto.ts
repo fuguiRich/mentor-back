@@ -4,6 +4,7 @@ import {
   IsArray,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
   ValidateIf,
 } from 'class-validator';
@@ -118,6 +119,15 @@ export class MentorProfileResponseDto {
     nullable: true,
   })
   professionalTitle!: string | null;
+
+  @ApiProperty({
+    type: String,
+    description:
+      '导师本人维护的联系电话；NULL 表示回退到同步源的 SyncPerson.mobile',
+    example: '13800000000',
+    nullable: true,
+  })
+  contactMobile!: string | null;
 
   @ApiProperty({
     description:
@@ -236,4 +246,27 @@ export class UpdateMentorProfileDto {
   @IsString({ message: '职称资质必须是字符串' })
   @MaxLength(100, { message: '职称资质最多 100 个字符' })
   professionalTitle?: string | null;
+}
+
+/**
+ * `PUT /mentor/profile/contact` 的唯一入参。
+ *
+ * 联系电话不是专业资格，**不走进驻 / 信息修改申请的审核流**：导师本人随时可改。
+ * `null` = 清除覆盖、回退显示同步源的手机号；不允许省略（省略 → 400）。
+ */
+export class UpdateMentorContactDto {
+  @ApiProperty({
+    type: String,
+    description:
+      '联系电话，6-20 位，可含数字 / `+` / `-` / 空格 / 括号；' +
+      '**传 null 表示清除覆盖**（回退到 SyncPerson.mobile）',
+    example: '13800000000',
+    nullable: true,
+  })
+  @ValidateIf((_object, value) => value !== null)
+  @IsString({ message: '联系电话必须是字符串' })
+  @Matches(/^[0-9+\-\s()]{6,20}$/, {
+    message: '联系电话需为 6-20 位数字，可含 + - 空格 括号',
+  })
+  contactMobile!: string | null;
 }

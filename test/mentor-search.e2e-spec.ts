@@ -712,6 +712,24 @@ describe('导师检索（学生侧）(e2e)', () => {
         status: 1,
       },
     ]);
+
+    // 联系电话：档案上的 contactMobile 优先，未填回退 SyncPerson.mobile
+    const mentorBId = BigInt(profileId('mentor-b'));
+    await prisma.client.mentorProfile.update({
+      where: { id: mentorBId },
+      data: { contactMobile: '13900000002' },
+    });
+    const overridden = await api('S001')
+      .get(`/mentors/${profileId('mentor-b')}`)
+      .expect(200);
+    expect(
+      (overridden.body as ResponseEnvelope<MentorSearchDetailResponseDto>).data
+        .mobile,
+    ).toBe('13900000002');
+    await prisma.client.mentorProfile.update({
+      where: { id: mentorBId },
+      data: { contactMobile: null },
+    });
   });
 
   // ── 判据 13：详情负例（未生效 / 不存在）→ 404 / 31102 ────────────

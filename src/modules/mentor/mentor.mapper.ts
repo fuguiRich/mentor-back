@@ -73,6 +73,7 @@ export function toMentorProfileResponse(
     affiliateOrg: entity.affiliateOrg,
     socialRoles: entity.socialRoles,
     professionalTitle: entity.professionalTitle,
+    contactMobile: entity.contactMobile,
     status: entity.status as MentorProfileStatus,
   };
 }
