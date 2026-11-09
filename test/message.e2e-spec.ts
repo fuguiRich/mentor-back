@@ -108,12 +108,13 @@ describe('工作进度与提醒（P5 Task 58 / §4.5）(e2e)', () => {
       '消息学院管理员',
       'msg_college',
       'deptAndChildren',
-      ['work:progress', 'reminder:send', 'message:list'],
+      ['work:progress', 'reminder:send', 'message:list', 'message:send'],
     );
     const scRole = await createRole('消息双创学院', 'msg_sc', 'all', [
       'work:progress',
       'reminder:send',
       'message:list',
+      'message:send',
     ]);
     const mentorRole = await createRole('消息导师', 'msg_mentor', 'self', [
       'message:list',
@@ -454,6 +455,111 @@ describe('工作进度与提醒（P5 Task 58 / §4.5）(e2e)', () => {
       })
       .expect(403);
     expect((response.body as ResponseEnvelope<null>).code).toBe(
+      ErrorCode.FORBIDDEN,
+    );
+  });
+
+  it('判据 11：学院管理员按角色发系统通知 → 本院导师收到，sender 正确', async () => {
+    const response = await api('msg-college-a')
+      .post('/messages')
+      .send({
+        recipientRoleCodes: ['msg_mentor'],
+        title: '关于本学期导师考核的通知',
+        content: '请于 11 月 20 日前完成考核材料提交。',
+      })
+      .expect(201);
+    expect(
+      (response.body as ResponseEnvelope<{ sent: number; skipped: number }>)
+        .data,
+    ).toEqual({ sent: 1, skipped: 0 });
+
+    const list = await api('msg-a1')
+      .get('/messages')
+      .query({ type: 4 })
+      .expect(200);
+    const data = (list.body as ResponseEnvelope<MessageListResponseDto>).data;
+    expect(data.total).toBe(1);
+    expect(data.list[0]).toMatchObject({
+      type: 4,
+      title: '关于本学期导师考核的通知',
+      content: '请于 11 月 20 日前完成考核材料提交。',
+      senderUserId: userIds.get('msg-college-a')?.toString(),
+      senderName: 'msg-college-a',
+      readAt: null,
+    });
+
+    const unread = await api('msg-a1')
+      .get('/messages/unread-count')
+      .expect(200);
+    expect(
+      (unread.body as ResponseEnvelope<{ unread: number }>).data.unread,
+    ).toBe(1);
+  });
+
+  it('判据 12：双创学院按角色群发全校 → 两位导师都收到', async () => {
+    const response = await api('msg-sc')
+      .post('/messages')
+      .send({
+        recipientRoleCodes: ['msg_mentor'],
+        title: '全校导师通知',
+        content: '请关注本学期考核安排。',
+      })
+      .expect(201);
+    expect(
+      (response.body as ResponseEnvelope<{ sent: number; skipped: number }>)
+        .data,
+    ).toEqual({ sent: 2, skipped: 0 });
+
+    const b1 = await api('msg-b1')
+      .get('/messages')
+      .query({ type: 4 })
+      .expect(200);
+    expect(
+      (b1.body as ResponseEnvelope<MessageListResponseDto>).data.total,
+    ).toBe(1);
+  });
+
+  it('判据 13：收件人越界 / 两种模式混用 / 缺条件 / 无权限各按码拒绝', async () => {
+    const outOfScope = await api('msg-college-a')
+      .post('/messages')
+      .send({
+        recipientUserIds: [userIds.get('msg-b1')?.toString()],
+        title: '越界通知',
+        content: '不应发出',
+      })
+      .expect(403);
+    expect((outOfScope.body as ResponseEnvelope<null>).code).toBe(
+      ErrorCode.FORBIDDEN,
+    );
+
+    for (const body of [
+      {
+        recipientUserIds: [userIds.get('msg-a1')?.toString()],
+        recipientRoleCodes: ['msg_mentor'],
+        title: '混用',
+        content: '不应发出',
+      },
+      { title: '缺收件人', content: '不应发出' },
+      { recipientRoleCodes: [], title: '空角色', content: '不应发出' },
+    ]) {
+      const response = await api('msg-college-a')
+        .post('/messages')
+        .send(body)
+        .expect(400);
+      expect((response.body as ResponseEnvelope<null>).code).toBe(
+        ErrorCode.PARAM_INVALID,
+      );
+    }
+
+    const noPermission = await api('msg-a1')
+      .post('/messages')
+      .send({
+        recipientRoleCodes: ['msg_mentor'],
+        title: '无权限',
+        content: '不应发出',
+      })
+      .expect(403);
+    expect((noPermission.body as ResponseEnvelope<null>).code).toBe(
       ErrorCode.FORBIDDEN,
     );
   });

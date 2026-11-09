@@ -20,13 +20,14 @@ export class ListMessageQueryDto extends PaginationQueryDto {
   read?: number;
 
   @ApiPropertyOptional({
-    description: '消息类型：1 预约待处理 / 2 指导记录待填写 / 3 考核待处理',
+    description:
+      '消息类型：1 预约待处理 / 2 指导记录待填写 / 3 考核待处理 / 4 系统通知',
     enum: MESSAGE_TYPES,
     example: 1,
   })
   @IsOptional()
   @Transform(toNumberIfNumericString)
   @IsInt()
-  @IsIn([...MESSAGE_TYPES], { message: 'type 必须是 1 / 2 / 3' })
+  @IsIn([...MESSAGE_TYPES], { message: 'type 必须是 1 / 2 / 3 / 4' })
   type?: number;
 }

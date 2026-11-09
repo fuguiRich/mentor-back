@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { Message } from '@prisma/client';
+import type { Message, Prisma } from '@prisma/client';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 
 /** 消息列表筛选 */
@@ -25,6 +25,13 @@ export interface MessageWrite {
   content: string;
   bizType: string | null;
   bizId: string | null;
+}
+
+/** 消息收件人投影（新建消息用） */
+export interface MessageRecipient {
+  id: bigint;
+  realName: string;
+  deptId: bigint | null;
 }
 
 /**
@@ -185,6 +192,84 @@ export class MessageRepository {
     return this.prisma.client.message.create({
       data: { ...input, createdBy: 0n, updatedBy: 0n },
     });
+  }
+
+  /** 批量落库；`createdBy` / `updatedBy` 由扩展按当前操作者重写 */
+  async createMany(inputs: readonly MessageWrite[]): Promise<number> {
+    if (inputs.length === 0) {
+      return 0;
+    }
+    const result = await this.prisma.client.message.createMany({
+      data: inputs.map((input) => ({
+        ...input,
+        createdBy: 0n,
+        updatedBy: 0n,
+      })),
+    });
+    return result.count;
+  }
+
+  /** 精确收件人：只回启用、未软删的账号 */
+  findActiveUsersByIds(ids: readonly bigint[]): Promise<MessageRecipient[]> {
+    if (ids.length === 0) {
+      return Promise.resolve([]);
+    }
+    return this.prisma.client.sysUser.findMany({
+      where: { id: { in: [...ids] }, status: 1 },
+      select: { id: true, realName: true, deptId: true },
+    });
+  }
+
+  /**
+   * 按角色 / 部门选收件人。
+   *
+   * `deptIds = null` 表示不限部门（`all` 范围）；非 null 时与 `deptId` 取交集。
+   */
+  findActiveUsersBySelector(input: {
+    roleCodes?: readonly string[];
+    deptId?: bigint;
+    deptIds: bigint[] | null;
+  }): Promise<MessageRecipient[]> {
+    const where: Prisma.SysUserWhereInput = { status: 1 };
+    if (input.deptId !== undefined) {
+      where.deptId = input.deptId;
+    } else if (input.deptIds !== null) {
+      where.deptId = { in: input.deptIds };
+    }
+    if (input.roleCodes !== undefined && input.roleCodes.length > 0) {
+      where.userRoles = {
+        some: { role: { code: { in: [...input.roleCodes] } } },
+      };
+    }
+    return this.prisma.client.sysUser.findMany({
+      where,
+      select: { id: true, realName: true, deptId: true },
+      orderBy: { id: 'asc' },
+    });
+  }
+
+  /** 校验角色 code 是否真实存在（自定义角色也允许） */
+  async findExistingRoleCodes(codes: readonly string[]): Promise<Set<string>> {
+    if (codes.length === 0) {
+      return new Set();
+    }
+    const rows = await this.prisma.client.sysRole.findMany({
+      where: { code: { in: [...codes] }, status: 1 },
+      select: { code: true },
+    });
+    return new Set(rows.map((row) => row.code));
+  }
+
+  /** 发送人姓名：`createdBy` → `SysUser.realName`（系统消息不在表里） */
+  async findSenderNames(ids: readonly bigint[]): Promise<Map<string, string>> {
+    if (ids.length === 0) {
+      return new Map();
+    }
+    const rows = await this.prisma.client.sysUser.findMany({
+      where: { id: { in: [...ids] } },
+      select: { id: true, realName: true },
+    });
+    return new Map(rows.map((row) => [row.id.toString(), row.realName]));
   }
 
   /**

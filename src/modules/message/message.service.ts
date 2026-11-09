@@ -14,6 +14,7 @@ import type {
   MessageListResponseDto,
   MessageResponseDto,
 } from './dto/message-response.dto';
+import type { SendMessageDto } from './dto/send-message.dto';
 import type { SendReminderDto } from './dto/send-reminder.dto';
 import type {
   WorkProgressMentorDto,
@@ -22,9 +23,13 @@ import type {
 import { toMessageResponse } from './message.mapper';
 import {
   MessageRepository,
+  type MessageRecipient,
   type MessageWrite,
   type VisibleMentor,
 } from './message.repository';
+
+/** 管理员新建消息的固定类型：4 系统通知 */
+const SYSTEM_MESSAGE_TYPE = 4;
 
 /** 提醒类型 → 消息类型 */
 const MESSAGE_TYPE_BY_REMINDER = {
@@ -137,6 +142,117 @@ export class MessageService {
     return { sent: writes.length, skipped };
   }
 
+  /**
+   * `POST /messages` —— 管理员新建站内消息。
+   *
+   * 收件人两种模式二选一：精确用户 ID，或角色 / 部门群发。消息类型固定
+   * `4 系统通知`。学院管理员只能发本院（及下级）用户；显式指定的收件人
+   * 有一个越界就整体 403。
+   */
+  async sendMessage(
+    dto: SendMessageDto,
+    caller: RequestUser,
+  ): Promise<{ sent: number; skipped: number }> {
+    const title = dto.title.trim();
+    const content = dto.content.trim();
+    if (title === '' || content === '') {
+      throw this.badRequest('标题和正文不能为空');
+    }
+
+    const hasUsers = dto.recipientUserIds !== undefined;
+    const hasSelector =
+      dto.recipientRoleCodes !== undefined || dto.deptId !== undefined;
+    if (hasUsers && hasSelector) {
+      throw this.badRequest(
+        'recipientUserIds 与 recipientRoleCodes/deptId 只能二选一',
+      );
+    }
+    if (!hasUsers && !hasSelector) {
+      throw this.badRequest('至少指定一个收件人条件');
+    }
+    if (hasUsers && dto.recipientUserIds?.length === 0) {
+      throw this.badRequest('recipientUserIds 不能为空');
+    }
+    if (
+      dto.recipientRoleCodes !== undefined &&
+      dto.recipientRoleCodes.length === 0
+    ) {
+      throw this.badRequest('recipientRoleCodes 不能为空');
+    }
+
+    const deptIds = await this.resolveDeptIds(caller);
+    const recipients = hasUsers
+      ? await this.resolveExplicitRecipients(
+          dto.recipientUserIds ?? [],
+          deptIds,
+        )
+      : await this.resolveSelectorRecipients(dto, deptIds);
+
+    const unique = [
+      ...new Map(
+        recipients.map((recipient) => [recipient.id.toString(), recipient]),
+      ).values(),
+    ];
+    const writes: MessageWrite[] = unique.map((recipient) => ({
+      recipientUserId: recipient.id,
+      type: SYSTEM_MESSAGE_TYPE,
+      title,
+      content,
+      bizType: null,
+      bizId: null,
+    }));
+    return { sent: await this.repository.createMany(writes), skipped: 0 };
+  }
+
+  private async resolveExplicitRecipients(
+    rawIds: readonly string[],
+    deptIds: bigint[] | null,
+  ): Promise<MessageRecipient[]> {
+    const ids = [...new Set(rawIds.map((id) => BigInt(id)))];
+    const recipients = await this.repository.findActiveUsersByIds(ids);
+    if (recipients.length !== ids.length) {
+      throw this.badRequest('收件人不存在或已停用');
+    }
+    if (
+      deptIds !== null &&
+      recipients.some(
+        (recipient) =>
+          recipient.deptId === null || !deptIds.includes(recipient.deptId),
+      )
+    ) {
+      throw this.forbidden();
+    }
+    return recipients;
+  }
+
+  private async resolveSelectorRecipients(
+    dto: SendMessageDto,
+    deptIds: bigint[] | null,
+  ): Promise<MessageRecipient[]> {
+    if (dto.recipientRoleCodes !== undefined) {
+      const existing = await this.repository.findExistingRoleCodes(
+        dto.recipientRoleCodes,
+      );
+      const missing = dto.recipientRoleCodes.filter(
+        (code) => !existing.has(code),
+      );
+      if (missing.length > 0) {
+        throw this.badRequest(`角色不存在：${missing.join(', ')}`);
+      }
+    }
+    const deptId = dto.deptId === undefined ? undefined : BigInt(dto.deptId);
+    if (deptId !== undefined && deptIds !== null && !deptIds.includes(deptId)) {
+      throw this.forbidden();
+    }
+    return this.repository.findActiveUsersBySelector({
+      ...(dto.recipientRoleCodes === undefined
+        ? {}
+        : { roleCodes: dto.recipientRoleCodes }),
+      ...(deptId === undefined ? {} : { deptId }),
+      deptIds,
+    });
+  }
+
   /** `GET /messages` —— 只读自己的消息 */
   async listMessages(
     query: ListMessageQueryDto,
@@ -156,13 +272,28 @@ export class MessageService {
       this.repository.countUnread(caller.userId),
     ]);
     const [list, total] = pageResult;
+    const senderNames = await this.repository.findSenderNames([
+      ...new Set(
+        list.filter((row) => row.createdBy !== 0n).map((row) => row.createdBy),
+      ),
+    ]);
     return {
-      list: list.map(toMessageResponse),
+      list: list.map((row) =>
+        toMessageResponse(
+          row,
+          senderNames.get(row.createdBy.toString()) ?? null,
+        ),
+      ),
       total,
       page: query.page,
       pageSize: query.pageSize,
       unread,
     };
+  }
+
+  /** `GET /messages/unread-count` —— 轻量未读数（角标用） */
+  async getUnreadCount(caller: RequestUser): Promise<{ unread: number }> {
+    return { unread: await this.repository.countUnread(caller.userId) };
   }
 
   /** `PATCH /messages/:id/read` */
@@ -175,7 +306,13 @@ export class MessageService {
         HttpStatus.NOT_FOUND,
       );
     }
-    return toMessageResponse(row);
+    const senderName =
+      row.createdBy === 0n
+        ? null
+        : ((await this.repository.findSenderNames([row.createdBy])).get(
+            row.createdBy.toString(),
+          ) ?? null);
+    return toMessageResponse(row, senderName);
   }
 
   /** `POST /messages/read-all` */
@@ -287,6 +424,14 @@ export class MessageService {
       ErrorCode.FORBIDDEN,
       '无权限',
       HttpStatus.FORBIDDEN,
+    );
+  }
+
+  private badRequest(message: string): BusinessException {
+    return new BusinessException(
+      ErrorCode.PARAM_INVALID,
+      message,
+      HttpStatus.BAD_REQUEST,
     );
   }
 }

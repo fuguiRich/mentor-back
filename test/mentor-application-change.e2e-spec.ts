@@ -845,7 +845,7 @@ describe('信息修改申请 (e2e)', () => {
     }
   });
 
-  it('判据 20：docs:gen 113 路径 / 146 操作（不多不少）；profile-change 恰好 post 一条', () => {
+  it('判据 20：docs:gen 114 路径 / 148 操作（不多不少）；profile-change 恰好 post 一条', () => {
     const document = buildDocument(app);
     const methodsOf = (path: string): string[] => {
       const item = document.paths[path] as Record<string, unknown> | undefined;
@@ -888,12 +888,14 @@ describe('信息修改申请 (e2e)', () => {
     // 学生端缺口补齐：/me/records + /me/reviews 2 路径 / 2 操作、学生成果佐证
     // 预览下载 2 路径 / 2 操作（108/141 → 112/145）
     // 联系电话维护 PUT /mentor/profile/contact 再加 1 路径 / 1 操作（112/145 → 113/146）
-    expect(paths).toHaveLength(113);
+    // 消息发送 POST /messages + 未读数 GET /messages/unread-count 再加
+    // 1 路径 / 2 操作（113/146 → 114/148）
+    expect(paths).toHaveLength(114);
     let operations = 0;
     for (const path of paths) {
       operations += methodsOf(path).length;
     }
-    expect(operations).toBe(146);
+    expect(operations).toBe(148);
   });
 
   it('判据 21（R28）：旧快照缺 professionalTitle 键 → GET 详情不报错，归一为 null', async () => {

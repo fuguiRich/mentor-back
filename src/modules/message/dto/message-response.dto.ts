@@ -1,7 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 
-/** 消息类型：1 预约待处理 / 2 指导记录待填写 / 3 考核待处理 */
-export const MESSAGE_TYPES = [1, 2, 3] as const;
+/** 消息类型：1 预约待处理 / 2 指导记录待填写 / 3 考核待处理 / 4 系统通知 */
+export const MESSAGE_TYPES = [1, 2, 3, 4] as const;
 
 /** 提醒类型（发提醒接口的入参） */
 export const REMINDER_TYPES = [
@@ -18,7 +18,8 @@ export class MessageResponseDto {
   id!: string;
 
   @ApiProperty({
-    description: '消息类型：1 预约待处理 / 2 指导记录待填写 / 3 考核待处理',
+    description:
+      '消息类型：1 预约待处理 / 2 指导记录待填写 / 3 考核待处理 / 4 系统通知',
     enum: MESSAGE_TYPES,
     example: 1,
   })
@@ -32,6 +33,22 @@ export class MessageResponseDto {
     example: '您有 2 条预约待确认，请及时处理。',
   })
   content!: string;
+
+  @ApiProperty({
+    description: '发送人用户 ID；null = 系统消息',
+    type: String,
+    nullable: true,
+    example: '5',
+  })
+  senderUserId!: string | null;
+
+  @ApiProperty({
+    description: '发送人姓名；系统消息为 null',
+    type: String,
+    nullable: true,
+    example: '创新创业学院管理员',
+  })
+  senderName!: string | null;
 
   @ApiProperty({
     description: '关联业务对象类型（弱关联）',

@@ -69,6 +69,8 @@ const SEED_PERMISSIONS = [
   // Task 22 的导师检索：两条路由（GET /mentors、GET /mentors/:id）挂这个码，
   // 学生 / 导师 / 两类管理员都要能查（计划 §Task 22：四个角色全绑）。
   { code: 'mentor:search', name: '检索导师' },
+  // 管理员新建站内消息（P5 §4.5）：POST /messages。
+  { code: 'message:send', name: '发送站内消息' },
   // Task 23 的发起预约：`POST /appointments` 挂这个码。学生要能发起，
   // 本任务就种，不等 Task 31——不种的话接口上线即废（403）。
   { code: 'appointment:create', name: '发起预约' },
@@ -209,6 +211,7 @@ const SEED_ROLE_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
     'archive:list',
     // P5：学院看本院工作进度、发提醒、登记与关联本院学生成果
     'message:list',
+    'message:send',
     'work:progress',
     'reminder:send',
     'student-achievement:manage',
@@ -252,6 +255,7 @@ const SEED_ROLE_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
     'sync:manage',
     // P5 §4.5 / §5.4：全校工作进度、发提醒、看全校学生成果
     'message:list',
+    'message:send',
     'work:progress',
     'reminder:send',
     'student-achievement:list',

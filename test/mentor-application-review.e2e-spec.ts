@@ -940,7 +940,7 @@ describe('两级审核流 (e2e)', () => {
       .expect(404);
   });
 
-  it('判据 19：路由面恰好 5 条；docs:gen 113 路径 / 146 操作（不多不少）', () => {
+  it('判据 19：路由面恰好 5 条；docs:gen 114 路径 / 148 操作（不多不少）', () => {
     const document = buildDocument(app);
     const methodsOf = (path: string): string[] => {
       const item = document.paths[path] as Record<string, unknown> | undefined;
@@ -987,13 +987,15 @@ describe('两级审核流 (e2e)', () => {
     // 学生端缺口补齐：/me/records + /me/reviews 2 路径 / 2 操作、学生成果佐证
     // 预览下载 2 路径 / 2 操作（108/141 → 112/145）
     // 联系电话维护 PUT /mentor/profile/contact 再加 1 路径 / 1 操作（112/145 → 113/146）
+    // 消息发送 POST /messages + 未读数 GET /messages/unread-count 再加
+    // 1 路径 / 2 操作（113/146 → 114/148）
     const paths = Object.keys(document.paths);
-    expect(paths).toHaveLength(113);
+    expect(paths).toHaveLength(114);
     let operations = 0;
     for (const path of paths) {
       operations += methodsOf(path).length;
     }
-    expect(operations).toBe(146);
+    expect(operations).toBe(148);
   });
 
   it('补 P2-A：deptAndChildren 的 college-admin-a 审外院申请 → 403 / 10003，申请行逐字不变', async () => {

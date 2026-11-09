@@ -31,6 +31,7 @@ import {
   MessageListResponseDto,
   MessageResponseDto,
 } from './dto/message-response.dto';
+import { SendMessageDto } from './dto/send-message.dto';
 import { SendReminderDto } from './dto/send-reminder.dto';
 import { WorkProgressResponseDto } from './dto/work-progress.dto';
 import { MessageService } from './message.service';
@@ -127,6 +128,59 @@ export class MessageController {
     @CurrentUser() caller: RequestUser,
   ): Promise<MessageListResponseDto> {
     return this.messageService.listMessages(query, caller);
+  }
+
+  @Get('messages/unread-count')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermission('message:list')
+  @DataScope('self')
+  @ApiOperation({
+    summary: '我的未读消息数',
+    description: '只统计当前登录者的未读消息；导航栏 / 首页角标用，轻量接口。',
+  })
+  @ApiOkResponse({
+    description: '未读数（200）',
+    schema: { example: { code: 0, message: 'success', data: { unread: 3 } } },
+  })
+  async unreadCount(
+    @CurrentUser() caller: RequestUser,
+  ): Promise<{ unread: number }> {
+    return this.messageService.getUnreadCount(caller);
+  }
+
+  @Post('messages')
+  @HttpCode(HttpStatus.CREATED)
+  @RequirePermission('message:send')
+  @DataScope('all')
+  @ApiOperation({
+    summary: '新建站内消息（管理员）',
+    description:
+      '消息类型固定为 `4 系统通知`。收件人两种模式二选一：' +
+      '`recipientUserIds` 精确指定，或 `recipientRoleCodes` / `deptId` 群发（AND）。' +
+      '学院管理员只能发给本院（及下级）用户；显式收件人越界 → **403 / 10003**。' +
+      '响应 `{ sent, skipped }`。',
+  })
+  @ApiBody({ type: SendMessageDto })
+  @ApiCreatedResponse({
+    description: '发送结果（201）',
+    schema: {
+      example: { code: 0, message: 'success', data: { sent: 2, skipped: 0 } },
+    },
+  })
+  @ApiBadRequestResponse({
+    description:
+      '收件人条件缺失 / 两种模式同时出现 / 标题正文越界（400 / 10001）',
+    schema: { example: errExample(ErrorCode.PARAM_INVALID, '参数校验失败') },
+  })
+  @ApiForbiddenResponse({
+    description: '缺权限码或收件人越界（403 / 10003）',
+    schema: { example: errExample(ErrorCode.FORBIDDEN, '无权限') },
+  })
+  async sendMessage(
+    @Body() dto: SendMessageDto,
+    @CurrentUser() caller: RequestUser,
+  ): Promise<{ sent: number; skipped: number }> {
+    return this.messageService.sendMessage(dto, caller);
   }
 
   @Patch('messages/:id/read')

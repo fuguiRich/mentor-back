@@ -11449,14 +11449,15 @@
             "name": "type",
             "required": false,
             "in": "query",
-            "description": "消息类型：1 预约待处理 / 2 指导记录待填写 / 3 考核待处理",
+            "description": "消息类型：1 预约待处理 / 2 指导记录待填写 / 3 考核待处理 / 4 系统通知",
             "schema": {
               "example": 1,
               "type": "number",
               "enum": [
                 1,
                 2,
-                3
+                3,
+                4
               ]
             }
           }
@@ -11498,6 +11499,101 @@
           }
         },
         "summary": "我的消息",
+        "tags": [
+          "消息与提醒"
+        ]
+      },
+      "post": {
+        "description": "消息类型固定为 `4 系统通知`。收件人两种模式二选一：`recipientUserIds` 精确指定，或 `recipientRoleCodes` / `deptId` 群发（AND）。学院管理员只能发给本院（及下级）用户；显式收件人越界 → **403 / 10003**。响应 `{ sent, skipped }`。",
+        "operationId": "MessageController_sendMessage",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendMessageDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "发送结果（201）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "example": {
+                    "code": 0,
+                    "message": "success",
+                    "data": {
+                      "sent": 2,
+                      "skipped": 0
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "收件人条件缺失 / 两种模式同时出现 / 标题正文越界（400 / 10001）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "example": {
+                    "code": 10001,
+                    "message": "参数校验失败",
+                    "data": null
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "缺权限码或收件人越界（403 / 10003）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "example": {
+                    "code": 10003,
+                    "message": "无权限",
+                    "data": null
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "新建站内消息（管理员）",
+        "tags": [
+          "消息与提醒"
+        ]
+      }
+    },
+    "/messages/unread-count": {
+      "get": {
+        "description": "只统计当前登录者的未读消息；导航栏 / 首页角标用，轻量接口。",
+        "operationId": "MessageController_unreadCount",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "未读数（200）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "example": {
+                    "code": 0,
+                    "message": "success",
+                    "data": {
+                      "unread": 3
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "我的未读消息数",
         "tags": [
           "消息与提醒"
         ]
@@ -18837,11 +18933,12 @@
           },
           "type": {
             "type": "number",
-            "description": "消息类型：1 预约待处理 / 2 指导记录待填写 / 3 考核待处理",
+            "description": "消息类型：1 预约待处理 / 2 指导记录待填写 / 3 考核待处理 / 4 系统通知",
             "enum": [
               1,
               2,
-              3
+              3,
+              4
             ],
             "example": 1
           },
@@ -18854,6 +18951,18 @@
             "type": "string",
             "description": "正文",
             "example": "您有 2 条预约待确认，请及时处理。"
+          },
+          "senderUserId": {
+            "type": "string",
+            "description": "发送人用户 ID；null = 系统消息",
+            "nullable": true,
+            "example": "5"
+          },
+          "senderName": {
+            "type": "string",
+            "description": "发送人姓名；系统消息为 null",
+            "nullable": true,
+            "example": "创新创业学院管理员"
           },
           "bizType": {
             "type": "string",
@@ -18884,6 +18993,8 @@
           "type",
           "title",
           "content",
+          "senderUserId",
+          "senderName",
           "bizType",
           "bizId",
           "readAt",
@@ -18927,6 +19038,51 @@
           "page",
           "pageSize",
           "unread"
+        ]
+      },
+      "SendMessageDto": {
+        "type": "object",
+        "properties": {
+          "recipientUserIds": {
+            "description": "精确收件人（SysUser.id，BIGINT 对外字符串）；与角色 / 部门二选一",
+            "example": [
+              "5",
+              "9"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "recipientRoleCodes": {
+            "description": "按角色群发（SysRole.code，支持自定义角色）；与 recipientUserIds 二选一，可与 deptId 组合",
+            "example": [
+              "mentor"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "deptId": {
+            "type": "string",
+            "description": "按部门群发（SysDept.id）；与 recipientUserIds 二选一，可与角色组合",
+            "example": "2"
+          },
+          "title": {
+            "type": "string",
+            "description": "标题，1-100 字符",
+            "example": "关于本学期导师考核的通知"
+          },
+          "content": {
+            "type": "string",
+            "description": "正文，1-500 字符",
+            "example": "请各位导师于 11 月 20 日前完成考核材料提交。"
+          }
+        },
+        "required": [
+          "title",
+          "content"
         ]
       },
       "CreateStudentAchievementDto": {
