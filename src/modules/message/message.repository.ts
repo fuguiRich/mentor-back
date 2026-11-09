@@ -187,6 +187,33 @@ export class MessageRepository {
     });
   }
 
+  /** 我发出的消息：按 `createdBy`（审计列）过滤，`read` 表示收件人是否已读 */
+  findSentPage(
+    senderUserId: bigint,
+    filter: MessageFilter,
+    skip: number,
+    take: number,
+  ): Promise<[Message[], number]> {
+    const where = {
+      createdBy: senderUserId,
+      ...(filter.read === undefined
+        ? {}
+        : filter.read === 0
+          ? { readAt: null }
+          : { readAt: { not: null } }),
+      ...(filter.type === undefined ? {} : { type: filter.type }),
+    };
+    return Promise.all([
+      this.prisma.client.message.findMany({
+        where,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip,
+        take,
+      }),
+      this.prisma.client.message.count({ where }),
+    ]);
+  }
+
   /** 一条消息落库；`createdBy` / `updatedBy` 由扩展按当前操作者重写 */
   create(input: MessageWrite): Promise<Message> {
     return this.prisma.client.message.create({

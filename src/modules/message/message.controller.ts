@@ -30,6 +30,7 @@ import { MessageParamDto } from './dto/message-param.dto';
 import {
   MessageListResponseDto,
   MessageResponseDto,
+  SentMessageListResponseDto,
 } from './dto/message-response.dto';
 import { SendMessageDto } from './dto/send-message.dto';
 import { SendReminderDto } from './dto/send-reminder.dto';
@@ -146,6 +147,24 @@ export class MessageController {
     @CurrentUser() caller: RequestUser,
   ): Promise<{ unread: number }> {
     return this.messageService.getUnreadCount(caller);
+  }
+
+  @Get('messages/sent')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermission('message:send')
+  @DataScope('self')
+  @ApiOperation({
+    summary: '我发出的消息',
+    description:
+      '按发送时间倒序，含收件人姓名与收件人已读状态。' +
+      '`read` 0 未读 / 1 已读（收件人视角）；`type` 1–4。',
+  })
+  @ApiOkResponse({ type: SentMessageListResponseDto })
+  async listSentMessages(
+    @Query() query: ListMessageQueryDto,
+    @CurrentUser() caller: RequestUser,
+  ): Promise<SentMessageListResponseDto> {
+    return this.messageService.listSentMessages(query, caller);
   }
 
   @Post('messages')

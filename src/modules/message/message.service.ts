@@ -13,6 +13,7 @@ import type { ListMessageQueryDto } from './dto/list-message-query.dto';
 import type {
   MessageListResponseDto,
   MessageResponseDto,
+  SentMessageListResponseDto,
 } from './dto/message-response.dto';
 import type { SendMessageDto } from './dto/send-message.dto';
 import type { SendReminderDto } from './dto/send-reminder.dto';
@@ -294,6 +295,38 @@ export class MessageService {
   /** `GET /messages/unread-count` —— 轻量未读数（角标用） */
   async getUnreadCount(caller: RequestUser): Promise<{ unread: number }> {
     return { unread: await this.repository.countUnread(caller.userId) };
+  }
+
+  /** `GET /messages/sent` —— 我发出的消息（含收件人与已读状态） */
+  async listSentMessages(
+    query: ListMessageQueryDto,
+    caller: RequestUser,
+  ): Promise<SentMessageListResponseDto> {
+    const filter = {
+      ...(query.read === undefined ? {} : { read: query.read }),
+      ...(query.type === undefined ? {} : { type: query.type }),
+    };
+    const [list, total] = await this.repository.findSentPage(
+      caller.userId,
+      filter,
+      (query.page - 1) * query.pageSize,
+      query.pageSize,
+    );
+    const recipientNames = await this.repository.findSenderNames([
+      ...new Set(list.map((row) => row.recipientUserId)),
+    ]);
+    const sender = await this.users.findById(caller.userId);
+    return {
+      list: list.map((row) => ({
+        ...toMessageResponse(row, sender?.realName ?? null),
+        recipientUserId: row.recipientUserId.toString(),
+        recipientName:
+          recipientNames.get(row.recipientUserId.toString()) ?? null,
+      })),
+      total,
+      page: query.page,
+      pageSize: query.pageSize,
+    };
   }
 
   /** `PATCH /messages/:id/read` */

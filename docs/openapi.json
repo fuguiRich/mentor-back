@@ -11599,6 +11599,90 @@
         ]
       }
     },
+    "/messages/sent": {
+      "get": {
+        "description": "按发送时间倒序，含收件人姓名与收件人已读状态。`read` 0 未读 / 1 已读（收件人视角）；`type` 1–4。",
+        "operationId": "MessageController_listSentMessages",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "页码，从 1 开始；不传时为 1",
+            "schema": {
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "每页条数，最大 100；不传时为 20",
+            "schema": {
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "read",
+            "required": false,
+            "in": "query",
+            "description": "已读状态：0 未读 / 1 已读；不传为全部",
+            "schema": {
+              "example": 0,
+              "type": "number",
+              "enum": [
+                0,
+                1
+              ]
+            }
+          },
+          {
+            "name": "type",
+            "required": false,
+            "in": "query",
+            "description": "消息类型：1 预约待处理 / 2 指导记录待填写 / 3 考核待处理 / 4 系统通知",
+            "schema": {
+              "example": 1,
+              "type": "number",
+              "enum": [
+                1,
+                2,
+                3,
+                4
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SentMessageListResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数失败（10001）。管道校验失败时 data.fields 给出逐字段清单（schema 如右）；业务层参数失败时 data 为 null。详见全局说明",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "我发出的消息",
+        "tags": [
+          "消息与提醒"
+        ]
+      }
+    },
     "/messages/{id}/read": {
       "patch": {
         "description": "只认自己的消息；别人的 / 不存在 → **404 / 38001**（藏存在性）。重复标记幂等，`readAt` 不会被刷新。",
@@ -19038,6 +19122,129 @@
           "page",
           "pageSize",
           "unread"
+        ]
+      },
+      "SentMessageResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "消息 ID（BIGINT 对外字符串）",
+            "example": "1"
+          },
+          "type": {
+            "type": "number",
+            "description": "消息类型：1 预约待处理 / 2 指导记录待填写 / 3 考核待处理 / 4 系统通知",
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "example": 1
+          },
+          "title": {
+            "type": "string",
+            "description": "标题",
+            "example": "预约待处理提醒"
+          },
+          "content": {
+            "type": "string",
+            "description": "正文",
+            "example": "您有 2 条预约待确认，请及时处理。"
+          },
+          "senderUserId": {
+            "type": "string",
+            "description": "发送人用户 ID；null = 系统消息",
+            "nullable": true,
+            "example": "5"
+          },
+          "senderName": {
+            "type": "string",
+            "description": "发送人姓名；系统消息为 null",
+            "nullable": true,
+            "example": "创新创业学院管理员"
+          },
+          "bizType": {
+            "type": "string",
+            "description": "关联业务对象类型（弱关联）",
+            "nullable": true,
+            "example": "MentorProfile"
+          },
+          "bizId": {
+            "type": "string",
+            "description": "关联业务对象 ID（弱关联）",
+            "nullable": true,
+            "example": "3"
+          },
+          "readAt": {
+            "type": "string",
+            "description": "已读时刻（ISO 8601）；未读为 null",
+            "nullable": true,
+            "example": null
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "创建时间（ISO 8601）",
+            "example": "2026-11-02T02:00:00.000Z"
+          },
+          "recipientUserId": {
+            "type": "string",
+            "description": "收件人用户 ID",
+            "example": "5"
+          },
+          "recipientName": {
+            "type": "string",
+            "description": "收件人姓名；账号已删除时为 null",
+            "nullable": true,
+            "example": "张明远"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "title",
+          "content",
+          "senderUserId",
+          "senderName",
+          "bizType",
+          "bizId",
+          "readAt",
+          "createdAt",
+          "recipientUserId",
+          "recipientName"
+        ]
+      },
+      "SentMessageListResponseDto": {
+        "type": "object",
+        "properties": {
+          "list": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SentMessageResponseDto"
+            }
+          },
+          "total": {
+            "type": "number",
+            "description": "总条数",
+            "example": 3
+          },
+          "page": {
+            "type": "number",
+            "description": "当前页码",
+            "example": 1
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "每页条数",
+            "example": 20
+          }
+        },
+        "required": [
+          "list",
+          "total",
+          "page",
+          "pageSize"
         ]
       },
       "SendMessageDto": {

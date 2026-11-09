@@ -7,7 +7,10 @@ import { runWithSyncWrite } from '../src/infra/prisma/sync-write-scope';
 import { ErrorCode } from '../src/common/constants/error-code';
 import type { ResponseEnvelope } from '../src/common/interceptors/response.interceptor';
 import { currentPeriod } from '../src/modules/assessment/assessment.constants';
-import type { MessageListResponseDto } from '../src/modules/message/dto/message-response.dto';
+import type {
+  MessageListResponseDto,
+  SentMessageListResponseDto,
+} from '../src/modules/message/dto/message-response.dto';
 import type { WorkProgressResponseDto } from '../src/modules/message/dto/work-progress.dto';
 import {
   authedAgent,
@@ -494,6 +497,28 @@ describe('工作进度与提醒（P5 Task 58 / §4.5）(e2e)', () => {
     expect(
       (unread.body as ResponseEnvelope<{ unread: number }>).data.unread,
     ).toBe(1);
+  });
+
+  it('判据 11b：发送人能在「已发送」里看到收件人与已读状态；无权限者 403', async () => {
+    const sent = await api('msg-college-a')
+      .get('/messages/sent')
+      .query({ type: 4 })
+      .expect(200);
+    const data = (sent.body as ResponseEnvelope<SentMessageListResponseDto>)
+      .data;
+    expect(data.total).toBe(1);
+    expect(data.list[0]).toMatchObject({
+      type: 4,
+      title: '关于本学期导师考核的通知',
+      recipientUserId: userIds.get('msg-a1')?.toString(),
+      recipientName: 'msg-a1',
+      readAt: null,
+    });
+
+    const denied = await api('msg-a1').get('/messages/sent').expect(403);
+    expect((denied.body as ResponseEnvelope<null>).code).toBe(
+      ErrorCode.FORBIDDEN,
+    );
   });
 
   it('判据 12：双创学院按角色群发全校 → 两位导师都收到', async () => {

@@ -101,3 +101,32 @@ export class MessageListResponseDto {
   })
   unread!: number;
 }
+
+/** `GET /messages/sent` 的一行：在消息响应上补收件人信息 */
+export class SentMessageResponseDto extends MessageResponseDto {
+  @ApiProperty({ description: '收件人用户 ID', example: '5' })
+  recipientUserId!: string;
+
+  @ApiProperty({
+    description: '收件人姓名；账号已删除时为 null',
+    type: String,
+    nullable: true,
+    example: '张明远',
+  })
+  recipientName!: string | null;
+}
+
+/** `GET /messages/sent` 的响应 */
+export class SentMessageListResponseDto {
+  @ApiProperty({ type: [SentMessageResponseDto] })
+  list!: SentMessageResponseDto[];
+
+  @ApiProperty({ description: '总条数', example: 3 })
+  total!: number;
+
+  @ApiProperty({ description: '当前页码', example: 1 })
+  page!: number;
+
+  @ApiProperty({ description: '每页条数', example: 20 })
+  pageSize!: number;
+}
