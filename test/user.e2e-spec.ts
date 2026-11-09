@@ -790,6 +790,67 @@ describe('用户 (e2e)', () => {
     );
   });
 
+  it('25b. 非超管（持 user:update）设置他人为超管 → 403', async () => {
+    const { token } = await seedOperator('super-setter', ['user:update']);
+    const target = await seedUser(prisma, {
+      username: 'super-set-target-1',
+      deptId: rootDeptId,
+    });
+
+    const response = await authedAgent(app, token)
+      .put(`/users/${target.userId.toString()}/super-admin`)
+      .send({ isSuperAdmin: true })
+      .expect(403);
+    expect((response.body as ResponseEnvelope<null>).code).toBe(
+      ErrorCode.FORBIDDEN,
+    );
+
+    const row = await prisma.client.sysUser.findFirst({
+      where: { id: target.userId },
+    });
+    expect(row?.isSuperAdmin).toBe(false);
+  });
+
+  it('25c. 超管可设置 / 取消他人超管；不能取消自己的超管', async () => {
+    const target = await seedUser(prisma, {
+      username: 'super-set-target-2',
+      deptId: rootDeptId,
+    });
+
+    const granted = await api
+      .put(`/users/${target.userId.toString()}/super-admin`)
+      .send({ isSuperAdmin: true })
+      .expect(200);
+    expect(
+      (granted.body as ResponseEnvelope<{ isSuperAdmin: boolean }>).data
+        .isSuperAdmin,
+    ).toBe(true);
+    expect(
+      (
+        await prisma.client.sysUser.findFirst({
+          where: { id: target.userId },
+        })
+      )?.isSuperAdmin,
+    ).toBe(true);
+
+    const revoked = await api
+      .put(`/users/${target.userId.toString()}/super-admin`)
+      .send({ isSuperAdmin: false })
+      .expect(200);
+    expect(
+      (revoked.body as ResponseEnvelope<{ isSuperAdmin: boolean }>).data
+        .isSuperAdmin,
+    ).toBe(false);
+
+    const self = await api
+      .put(`/users/${admin.userId.toString()}/super-admin`)
+      .send({ isSuperAdmin: false })
+      .expect(409);
+    expect((self.body as ResponseEnvelope<null>).code).toBe(
+      ErrorCode.USER_SUPER_ADMIN_PROTECTED,
+    );
+  });
+
   // ── 数据范围（Task 7 判据 1-5）：@DataScope 上限 + 越权 403 ─────────────────
   //
   // 载体是 GET /users（@DataScope('all')）。角色编码带 scope_ 前缀：

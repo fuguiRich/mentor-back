@@ -29,6 +29,7 @@ import { UserParamDto } from './dto/user-param.dto';
 import { QueryUserDto } from './dto/query-user.dto';
 import { CreateUserAccountDto } from './dto/create-user-account.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
+import { UpdateUserSuperAdminDto } from './dto/update-user-super-admin.dto';
 import { ResetUserPasswordDto } from './dto/reset-user-password.dto';
 import { AssignUserRolesDto } from './dto/assign-user-roles.dto';
 import { UserResponseDto } from './dto/user-response.dto';
@@ -165,6 +166,41 @@ export class UserController {
     @Body() dto: UpdateUserStatusDto,
   ): Promise<UserResponseDto> {
     return this.userService.updateStatus(BigInt(params.id), dto);
+  }
+
+  @Put(':id/super-admin')
+  @RequirePermission('user:update')
+  @ApiOperation({
+    summary: '设置 / 取消超级管理员',
+    description:
+      '**只有超级管理员能调用**；非超管即使持有 `user:update` 也返回 **403 / 10003**。' +
+      '`isSuperAdmin=true` 授予超管身份，`false` 取消。不能取消自己的超管身份' +
+      '（**409 / 21105**，防止锁死最后一个超管）。变更后目标账号的全部令牌作废，' +
+      '需要重新登录才能拿到新的超管身份。',
+  })
+  @ApiOkResponse({
+    type: UserResponseDto,
+    description: '修改成功，返回修改后的用户记录',
+  })
+  @ApiForbiddenResponse({
+    description: '调用者不是超级管理员（403 / 10003）',
+    schema: { example: errExample(ErrorCode.FORBIDDEN, '无权限') },
+  })
+  @ApiConflictResponse({
+    description: '取消自己的超管身份（409 / 21105）',
+    schema: {
+      example: errExample(
+        ErrorCode.USER_SUPER_ADMIN_PROTECTED,
+        '不能取消自己的超级管理员',
+      ),
+    },
+  })
+  async updateSuperAdmin(
+    @Param() params: UserParamDto,
+    @Body() dto: UpdateUserSuperAdminDto,
+    @CurrentUser() caller: RequestUser,
+  ): Promise<UserResponseDto> {
+    return this.userService.updateSuperAdmin(BigInt(params.id), dto, caller);
   }
 
   @Put(':id/password')

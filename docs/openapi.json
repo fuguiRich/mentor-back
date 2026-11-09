@@ -1540,6 +1540,88 @@
         ]
       }
     },
+    "/users/{id}/super-admin": {
+      "put": {
+        "description": "**只有超级管理员能调用**；非超管即使持有 `user:update` 也返回 **403 / 10003**。`isSuperAdmin=true` 授予超管身份，`false` 取消。不能取消自己的超管身份（**409 / 21105**，防止锁死最后一个超管）。变更后目标账号的全部令牌作废，需要重新登录才能拿到新的超管身份。",
+        "operationId": "UserController_updateSuperAdmin",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "用户 ID",
+            "schema": {
+              "example": "1",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserSuperAdminDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "修改成功，返回修改后的用户记录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数失败（10001）。管道校验失败时 data.fields 给出逐字段清单（schema 如右）；业务层参数失败时 data 为 null。详见全局说明",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "调用者不是超级管理员（403 / 10003）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "example": {
+                    "code": 10003,
+                    "message": "无权限",
+                    "data": null
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "取消自己的超管身份（409 / 21105）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "example": {
+                    "code": 21105,
+                    "message": "不能取消自己的超级管理员",
+                    "data": null
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "设置 / 取消超级管理员",
+        "tags": [
+          "用户管理"
+        ]
+      }
+    },
     "/users/{id}/password": {
       "put": {
         "description": "管理员重置某个用户的密码。**不校验旧密码**——这是管理员操作，不是本人改密（本人改密走 PUT /auth/password）。重置会作废该用户全部已签发令牌（R14）。超管账号只有超管能重置（裁决 R21）：user:reset-password 是「不校验旧密码改别人的密码」，不加这道门，持有该权限的非超管就能接管超管账号。",
@@ -13733,6 +13815,19 @@
         },
         "required": [
           "status"
+        ]
+      },
+      "UpdateUserSuperAdminDto": {
+        "type": "object",
+        "properties": {
+          "isSuperAdmin": {
+            "type": "boolean",
+            "description": "true = 设为超级管理员；false = 取消超级管理员",
+            "example": true
+          }
+        },
+        "required": [
+          "isSuperAdmin"
         ]
       },
       "ResetUserPasswordDto": {

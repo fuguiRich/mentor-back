@@ -20,6 +20,7 @@ import type { UserWithDeptName } from './user.repository';
 import type { QueryUserDto } from './dto/query-user.dto';
 import type { CreateUserAccountDto } from './dto/create-user-account.dto';
 import type { UpdateUserStatusDto } from './dto/update-user-status.dto';
+import type { UpdateUserSuperAdminDto } from './dto/update-user-super-admin.dto';
 import type { ResetUserPasswordDto } from './dto/reset-user-password.dto';
 import type { AssignUserRolesDto } from './dto/assign-user-roles.dto';
 import type { UserPageResponseDto } from './dto/user-page-response.dto';
@@ -318,6 +319,47 @@ export class UserService {
       status: dto.status,
     });
 
+    return toUserResponse(updated);
+  }
+
+  /**
+   * 设置 / 取消超级管理员。
+   *
+   * 只有超级管理员能操作（`@RequirePermission('user:update')` 只是第一道门，
+   * 非超管即使持码也在 Service 被 403 拦下）。取消自己 → 409 / 21105：
+   * 防止把最后一个超管锁死。变更后作废目标全部令牌——JWT 里带
+   * `isSuperAdmin`，不重登就会继续用旧身份。
+   */
+  async updateSuperAdmin(
+    id: bigint,
+    dto: UpdateUserSuperAdminDto,
+    caller: RequestUser,
+  ): Promise<UserResponseDto> {
+    if (!caller.isSuperAdmin) {
+      throw new BusinessException(
+        ErrorCode.FORBIDDEN,
+        '无权限',
+        HttpStatus.FORBIDDEN,
+      );
+    }
+    const current = await this.mustFind(id);
+    if (current.isSuperAdmin === dto.isSuperAdmin) {
+      return toUserResponse(current);
+    }
+    if (!dto.isSuperAdmin && id === caller.userId) {
+      throw new BusinessException(
+        ErrorCode.USER_SUPER_ADMIN_PROTECTED,
+        '不能取消自己的超级管理员',
+        HttpStatus.CONFLICT,
+      );
+    }
+
+    // 先作废再落库：与改密同构，失败可恢复（重新设回即可）
+    await this.sessions.revokeSessions(id);
+    const updated = await this.repository.update(id, {
+      username: current.username,
+      isSuperAdmin: dto.isSuperAdmin,
+    });
     return toUserResponse(updated);
   }
 
