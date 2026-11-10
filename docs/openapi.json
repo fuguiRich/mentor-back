@@ -8828,14 +8828,17 @@
             "name": "status",
             "required": false,
             "in": "query",
-            "description": "状态：0 待初评 / 1 待终评 / 2 已生效 / 3 已退回",
+            "description": "状态：0 待初评 / 1 待终评 / 2 已生效 / 3 已退回 / 4 申诉中 / 5 申诉已受理 / 6 申诉已驳回",
             "schema": {
               "type": "number",
               "enum": [
                 0,
                 1,
                 2,
-                3
+                3,
+                4,
+                5,
+                6
               ]
             }
           },
@@ -9252,7 +9255,7 @@
     },
     "/assessments/{id}/appeals": {
       "post": {
-        "description": "导师对**已生效**的考核结果提交申诉说明（§3.8）。请求体 `{ reason }`：1-1000 字。**不修改考核结果**（R56）——申诉只是「我不同意，请复核」。守卫：考核不存在 → **404 / 35001**；不是该导师本人 → **403 / 10003**；`status ≠ 2 APPROVED` → **409 / 35006**；已有待处理申诉 → **409 / 35005**。",
+        "description": "导师对**已生效**的考核结果提交申诉说明（§3.8）。请求体 `{ reason }`：1-1000 字。**不修改考核等级**（R56）——申诉只是「我不同意，请复核」；但考核状态会从 `2 已生效` 推进到 `4 申诉中`。守卫：考核不存在 → **404 / 35001**；不是该导师本人 → **403 / 10003**；`status ≠ 2 APPROVED` → **409 / 35006**；已有待处理申诉 → **409 / 35005**。",
         "operationId": "AssessmentController_createAppeal",
         "parameters": [
           {
@@ -9442,7 +9445,7 @@
     },
     "/assessments/{id}/appeals/{appealId}/handle": {
       "post": {
-        "description": "请求体 `{ decision, reply }`：`decision` 是 `accept` 受理 / `reject` 驳回，`reply` 1-1000 字（**两个决定都必填**）。**不修改考核结果**（R56）：受理只表示已收到并会复核，不是重新定级。守卫：考核不存在 → **404 / 35001**；申诉不存在 / 不属于该考核 → **404 / 35004**；申诉状态不是 `0 PENDING` → **409 / 35002**。",
+        "description": "请求体 `{ decision, reply }`：`decision` 是 `accept` 受理 / `reject` 驳回，`reply` 1-1000 字（**两个决定都必填**）。**不修改考核结果**（R56）：受理只表示已收到并会复核，不是重新定级。守卫：考核不存在 → **404 / 35001**；申诉不存在 / 不属于该考核 → **404 / 35004**；申诉状态不是 `0 PENDING` 或考核不在 `4 申诉中` → **409 / 35002**。处理结果同步推进考核状态：受理 → `5 申诉已受理`，驳回 → `6 申诉已驳回`。",
         "operationId": "AssessmentController_handleAppeal",
         "parameters": [
           {
@@ -17426,6 +17429,45 @@
           "period"
         ]
       },
+      "AssessmentMentorRefDto": {
+        "type": "object",
+        "properties": {
+          "profileId": {
+            "type": "string",
+            "description": "导师档案 ID",
+            "example": "1"
+          },
+          "personId": {
+            "type": "string",
+            "description": "人员 ID（SyncPerson.id）",
+            "example": "7"
+          },
+          "name": {
+            "type": "string",
+            "description": "导师姓名",
+            "example": "张明远"
+          },
+          "deptId": {
+            "type": "string",
+            "description": "所属部门 ID；没有组织投影时为 null",
+            "nullable": true,
+            "example": "2"
+          },
+          "deptName": {
+            "type": "string",
+            "description": "所属部门名；没有组织投影时为 null",
+            "nullable": true,
+            "example": "计算机学院"
+          }
+        },
+        "required": [
+          "profileId",
+          "personId",
+          "name",
+          "deptId",
+          "deptName"
+        ]
+      },
       "AssessmentWeightsDto": {
         "type": "object",
         "properties": {
@@ -17507,6 +17549,26 @@
           "compositeScore"
         ]
       },
+      "AssessmentUserRefDto": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "description": "用户 ID",
+            "example": "5"
+          },
+          "name": {
+            "type": "string",
+            "description": "用户姓名；账号已删除时为 null",
+            "nullable": true,
+            "example": "计算机学院管理员"
+          }
+        },
+        "required": [
+          "userId",
+          "name"
+        ]
+      },
       "AssessmentResponseDto": {
         "type": "object",
         "properties": {
@@ -17520,6 +17582,14 @@
             "description": "导师档案 ID（BIGINT 对外字符串）",
             "example": "1"
           },
+          "mentor": {
+            "description": "导师实体（姓名 / 部门等），避免前端只拿 ID 再查",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AssessmentMentorRefDto"
+              }
+            ]
+          },
           "period": {
             "type": "string",
             "description": "考核周期（`YYYY-S`，S=1 上半年 / 2 下半年）",
@@ -17527,8 +17597,17 @@
           },
           "status": {
             "type": "number",
-            "description": "状态：0 待初评 / 1 待终评 / 2 已生效 / 3 已退回",
-            "example": 0
+            "description": "状态：0 待初评 / 1 待终评 / 2 已生效 / 3 已退回 / 4 申诉中 / 5 申诉已受理 / 6 申诉已驳回",
+            "example": 0,
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6
+            ]
           },
           "weights": {
             "description": "本次计算使用的权重",
@@ -17582,6 +17661,26 @@
             "nullable": true,
             "example": null
           },
+          "collegeSubmittedBy": {
+            "description": "初评提交人；未提交时为 null",
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AssessmentUserRefDto"
+              }
+            ]
+          },
+          "finalReviewedBy": {
+            "description": "终评提交人；未终评时为 null",
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AssessmentUserRefDto"
+              }
+            ]
+          },
           "createdAt": {
             "type": "string",
             "description": "创建时间（ISO 8601）",
@@ -17591,6 +17690,7 @@
         "required": [
           "id",
           "mentorProfileId",
+          "mentor",
           "period",
           "status",
           "weights",
@@ -17601,6 +17701,8 @@
           "finalGrade",
           "finalComment",
           "finalReviewedAt",
+          "collegeSubmittedBy",
+          "finalReviewedBy",
           "createdAt"
         ]
       },
@@ -17771,6 +17873,43 @@
           "reason"
         ]
       },
+      "AppealAssessmentRefDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "考核 ID",
+            "example": "1"
+          },
+          "period": {
+            "type": "string",
+            "description": "考核周期",
+            "example": "2026-1"
+          },
+          "mentorProfileId": {
+            "type": "string",
+            "description": "导师档案 ID",
+            "example": "1"
+          },
+          "mentorName": {
+            "type": "string",
+            "description": "导师姓名",
+            "example": "张明远"
+          },
+          "status": {
+            "type": "number",
+            "description": "考核状态：2 已生效 / 4 申诉中 / 5 申诉已受理 / 6 申诉已驳回",
+            "example": 4
+          }
+        },
+        "required": [
+          "id",
+          "period",
+          "mentorProfileId",
+          "mentorName",
+          "status"
+        ]
+      },
       "AppealResponseDto": {
         "type": "object",
         "properties": {
@@ -17783,6 +17922,14 @@
             "type": "string",
             "description": "所属考核 ID（BIGINT 对外字符串）",
             "example": "1"
+          },
+          "assessment": {
+            "description": "所属考核摘要（周期 / 导师 / 当前状态）",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AppealAssessmentRefDto"
+              }
+            ]
           },
           "reason": {
             "type": "string",
@@ -17806,6 +17953,26 @@
             "nullable": true,
             "example": null
           },
+          "submittedBy": {
+            "description": "提交申诉的导师用户；系统数据缺失时为 null",
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AssessmentUserRefDto"
+              }
+            ]
+          },
+          "handledBy": {
+            "description": "处理人；未处理时为 null",
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AssessmentUserRefDto"
+              }
+            ]
+          },
           "createdAt": {
             "type": "string",
             "description": "提交时间（ISO 8601）",
@@ -17815,10 +17982,13 @@
         "required": [
           "id",
           "assessmentId",
+          "assessment",
           "reason",
           "status",
           "reply",
           "handledAt",
+          "submittedBy",
+          "handledBy",
           "createdAt"
         ]
       },

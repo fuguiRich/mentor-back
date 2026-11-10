@@ -1,8 +1,30 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { PaginationQueryDto } from '../../../common/dto/pagination-query.dto';
+import { AssessmentUserRefDto } from './assessment-response.dto';
 
 /** `GET /assessments/:id/appeals` 的查询参数：只有分页 */
 export class QueryAppealDto extends PaginationQueryDto {}
+
+/** 申诉关联的考核摘要 */
+export class AppealAssessmentRefDto {
+  @ApiProperty({ description: '考核 ID', example: '1' })
+  id!: string;
+
+  @ApiProperty({ description: '考核周期', example: '2026-1' })
+  period!: string;
+
+  @ApiProperty({ description: '导师档案 ID', example: '1' })
+  mentorProfileId!: string;
+
+  @ApiProperty({ description: '导师姓名', example: '张明远' })
+  mentorName!: string;
+
+  @ApiProperty({
+    description: '考核状态：2 已生效 / 4 申诉中 / 5 申诉已受理 / 6 申诉已驳回',
+    example: 4,
+  })
+  status!: number;
+}
 
 /**
  * 一条考核申诉的响应形状（RES-03 / RES-04）。
@@ -18,6 +40,12 @@ export class AppealResponseDto {
     example: '1',
   })
   assessmentId!: string;
+
+  @ApiProperty({
+    description: '所属考核摘要（周期 / 导师 / 当前状态）',
+    type: AppealAssessmentRefDto,
+  })
+  assessment!: AppealAssessmentRefDto;
 
   @ApiProperty({
     description: '申诉说明',
@@ -46,6 +74,20 @@ export class AppealResponseDto {
     example: null,
   })
   handledAt!: string | null;
+
+  @ApiProperty({
+    type: AssessmentUserRefDto,
+    description: '提交申诉的导师用户；系统数据缺失时为 null',
+    nullable: true,
+  })
+  submittedBy!: AssessmentUserRefDto | null;
+
+  @ApiProperty({
+    type: AssessmentUserRefDto,
+    description: '处理人；未处理时为 null',
+    nullable: true,
+  })
+  handledBy!: AssessmentUserRefDto | null;
 
   @ApiProperty({
     description: '提交时间（ISO 8601）',

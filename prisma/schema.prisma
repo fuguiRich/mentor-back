@@ -809,6 +809,7 @@ model Assessment {
   /// 考核周期，只接受 `^\d{4}$`（R47）；区间 `[YYYY-01-01, (YYYY+1)-01-01)`
   period    String   @db.VarChar(20)
   /// 0 DRAFT | 1 COLLEGE_SUBMITTED | 2 APPROVED | 3 RETURNED
+  /// | 4 APPEALING | 5 APPEAL_ACCEPTED | 6 APPEAL_REJECTED
   status    Int      @default(0) @db.TinyInt
 
   /// 提交初评时冻结的三个权重 `{ review, workload, achievement }`（R55 / R61）
@@ -857,7 +858,8 @@ model Assessment {
 /// `0 PENDING → 1 ACCEPTED | 2 REJECTED`，**终态 1 / 2**。
 /// 同一考核同时只许一条 `PENDING` 申诉——**服务层检查**，不加 DB 约束：
 /// 「同一考核有多条历史申诉」是合理的，只是不能有两条待处理。
-/// **受理不改 `Assessment`**（R56）：受理只表示双创学院已收到并会复核。
+/// **受理不改 `Assessment` 的等级**（R56）；但会推进考核状态：
+/// 提交 → 4 APPEALING，受理 → 5 APPEAL_ACCEPTED，驳回 → 6 APPEAL_REJECTED。
 model AssessmentAppeal {
   id           BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
   assessmentId BigInt   @map("assessment_id") @db.UnsignedBigInt

@@ -59,6 +59,48 @@ export class AssessmentMetricsDto {
   compositeScore!: string;
 }
 
+/** 考核关联的导师实体（避免前端只拿到 mentorProfileId 再二次查询） */
+export class AssessmentMentorRefDto {
+  @ApiProperty({ description: '导师档案 ID', example: '1' })
+  profileId!: string;
+
+  @ApiProperty({ description: '人员 ID（SyncPerson.id）', example: '7' })
+  personId!: string;
+
+  @ApiProperty({ description: '导师姓名', example: '张明远' })
+  name!: string;
+
+  @ApiProperty({
+    type: String,
+    description: '所属部门 ID；没有组织投影时为 null',
+    nullable: true,
+    example: '2',
+  })
+  deptId!: string | null;
+
+  @ApiProperty({
+    type: String,
+    description: '所属部门名；没有组织投影时为 null',
+    nullable: true,
+    example: '计算机学院',
+  })
+  deptName!: string | null;
+}
+
+/** 考核 / 申诉里的用户引用（审核人、处理人） */
+export class AssessmentUserRefDto {
+  @ApiProperty({ description: '用户 ID', example: '5' })
+  userId!: string;
+
+  @ApiProperty({
+    type: String,
+    description: '用户姓名；账号已删除时为 null',
+    nullable: true,
+    example: '计算机学院管理员',
+  })
+  name!: string | null;
+}
+
 /**
  * 一条考核的响应形状（RES-03 / RES-04）。
  *
@@ -76,14 +118,23 @@ export class AssessmentResponseDto {
   mentorProfileId!: string;
 
   @ApiProperty({
+    description: '导师实体（姓名 / 部门等），避免前端只拿 ID 再查',
+    type: AssessmentMentorRefDto,
+  })
+  mentor!: AssessmentMentorRefDto;
+
+  @ApiProperty({
     description: '考核周期（`YYYY-S`，S=1 上半年 / 2 下半年）',
     example: '2026-1',
   })
   period!: string;
 
   @ApiProperty({
-    description: '状态：0 待初评 / 1 待终评 / 2 已生效 / 3 已退回',
+    description:
+      '状态：0 待初评 / 1 待终评 / 2 已生效 / 3 已退回 / 4 申诉中 / ' +
+      '5 申诉已受理 / 6 申诉已驳回',
     example: 0,
+    enum: [0, 1, 2, 3, 4, 5, 6],
   })
   status!: number;
 
@@ -146,6 +197,20 @@ export class AssessmentResponseDto {
     example: null,
   })
   finalReviewedAt!: string | null;
+
+  @ApiProperty({
+    type: AssessmentUserRefDto,
+    description: '初评提交人；未提交时为 null',
+    nullable: true,
+  })
+  collegeSubmittedBy!: AssessmentUserRefDto | null;
+
+  @ApiProperty({
+    type: AssessmentUserRefDto,
+    description: '终评提交人；未终评时为 null',
+    nullable: true,
+  })
+  finalReviewedBy!: AssessmentUserRefDto | null;
 
   @ApiProperty({
     description: '创建时间（ISO 8601）',

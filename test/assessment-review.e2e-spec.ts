@@ -298,10 +298,19 @@ describe('考核：开考核与提交初评（P3 Task 39）(e2e)', () => {
       .data;
     expect(data).toMatchObject({
       mentorProfileId: mentorAId.toString(),
+      mentor: {
+        profileId: mentorAId.toString(),
+        personId: personOf('asm-mentor-a').toString(),
+        name: '考核导师甲',
+        deptId: dept('A').toString(),
+        deptName: '考核 A 组织',
+      },
       period: '2026-1',
       status: 0,
       collegeGrade: null,
       finalGrade: null,
+      collegeSubmittedBy: null,
+      finalReviewedBy: null,
     });
     // 空集：无评价时 reviewAvg 是 null，不是 "0.00"
     expect(data.metrics.reviewAvg).toBeNull();
@@ -725,11 +734,25 @@ describe('考核：开考核与提交初评（P3 Task 39）(e2e)', () => {
     const data = (response.body as ResponseEnvelope<AppealResponseDto>).data;
     expect(data).toMatchObject({
       assessmentId: row.id.toString(),
+      assessment: {
+        id: row.id.toString(),
+        period: '2026-1',
+        mentorProfileId: mentorAId.toString(),
+        mentorName: '考核导师甲',
+        status: 4,
+      },
       reason: '初评材料遗漏了省级奖项，请复核。',
       status: 0,
       reply: null,
       handledAt: null,
+      handledBy: null,
     });
+    expect(data.submittedBy).toMatchObject({ name: 'asm-mentor-a' });
+
+    const after = await prisma.client.assessment.findFirst({
+      where: { id: row.id },
+    });
+    expect(after?.status).toBe(4);
   });
 
   it('判据 21：已有待处理申诉再提交 → 409 / 35005', async () => {
@@ -787,7 +810,7 @@ describe('考核：开考核与提交初评（P3 Task 39）(e2e)', () => {
     );
   });
 
-  it('判据 24：受理申诉 → 200，考核**仍是** 2（R56：受理不改结果）', async () => {
+  it('判据 24：受理申诉 → 200，考核推进到 `5 申诉已受理`，等级不变', async () => {
     const row = await prisma.client.assessment.findFirst({
       where: { mentorId: mentorAId, period: '2026-1' },
     });
@@ -812,12 +835,14 @@ describe('考核：开考核与提交初评（P3 Task 39）(e2e)', () => {
     expect(data.status).toBe(1);
     expect(data.reply).toBe('已收到，将在本月底前复核。');
     expect(data.handledAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(data.handledBy).toMatchObject({ name: 'asm-sc' });
+    expect(data.assessment.status).toBe(5);
 
-    // R56 的可伪性：若受理顺手改了考核状态，这里会红
+    // 受理只推进考核状态，不改变终评等级
     const after = await prisma.client.assessment.findFirst({
       where: { id: row.id },
     });
-    expect(after?.status).toBe(2);
+    expect(after?.status).toBe(5);
     expect(after?.finalGrade).toBe(3);
   });
 
@@ -845,6 +870,41 @@ describe('考核：开考核与提交初评（P3 Task 39）(e2e)', () => {
     expect((response.body as ResponseEnvelope<null>).code).toBe(
       ErrorCode.ASSESSMENT_TRANSITION_INVALID,
     );
+  });
+
+  it('判据 25b：驳回申诉 → 考核推进到 `6 申诉已驳回`', async () => {
+    const row = await prisma.client.assessment.findFirst({
+      where: { mentorId: mentorBId, period: '2026-1' },
+    });
+    if (row === null) {
+      throw new Error('B 院考核不见了');
+    }
+    await api('asm-sc')
+      .post(`/assessments/${row.id.toString()}/final-review`)
+      .send({ decision: 'approve', grade: 2, comment: '终评合格。' })
+      .expect(200);
+
+    const appeal = await api('asm-mentor-b')
+      .post(`/assessments/${row.id.toString()}/appeals`)
+      .send({ reason: '对终评等级有异议。' })
+      .expect(201);
+    const appealId = (appeal.body as ResponseEnvelope<AppealResponseDto>).data
+      .id;
+
+    const handled = await api('asm-sc')
+      .post(`/assessments/${row.id.toString()}/appeals/${appealId}/handle`)
+      .send({ decision: 'reject', reply: '复核后维持原等级。' })
+      .expect(200);
+    const handledData = (handled.body as ResponseEnvelope<AppealResponseDto>)
+      .data;
+    expect(handledData.status).toBe(2);
+    expect(handledData.assessment.status).toBe(6);
+
+    const after = await prisma.client.assessment.findFirst({
+      where: { id: row.id },
+    });
+    expect(after?.status).toBe(6);
+    expect(after?.finalGrade).toBe(2);
   });
 
   it('判据 26：申诉列表——导师本人可看，跨院管理员 403', async () => {
@@ -997,7 +1057,7 @@ describe('考核：开考核与提交初评（P3 Task 39）(e2e)', () => {
       .data;
     expect(appealData.status).toBe(0);
 
-    // ⑨ 双创学院受理 → 申诉终态，考核仍是 2
+    // ⑨ 双创学院受理 → 申诉终态，考核推进到 5 申诉已受理
     const handled = await api('asm-sc')
       .post(`/assessments/${createdData.id}/appeals/${appealData.id}/handle`)
       .send({ decision: 'accept', reply: '已受理，下月复核。' })
@@ -1009,7 +1069,7 @@ describe('考核：开考核与提交初评（P3 Task 39）(e2e)', () => {
     const finalRow = await prisma.client.assessment.findFirst({
       where: { id: BigInt(createdData.id) },
     });
-    expect(finalRow?.status).toBe(2);
+    expect(finalRow?.status).toBe(5);
     expect(finalRow?.finalGrade).toBe(1);
   });
 });

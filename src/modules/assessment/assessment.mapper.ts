@@ -2,7 +2,63 @@ import type { Assessment, AssessmentAppeal } from '@prisma/client';
 import type { ResolvedWeights } from './assessment.constants';
 import type { AssessmentMetrics } from './assessment.metrics';
 import type { AppealResponseDto } from './dto/appeal-response.dto';
-import type { AssessmentResponseDto } from './dto/assessment-response.dto';
+import type {
+  AssessmentMentorRefDto,
+  AssessmentResponseDto,
+  AssessmentUserRefDto,
+} from './dto/assessment-response.dto';
+
+/** 映射考核时需要的关联实体（导师 + 审核人姓名） */
+export interface AssessmentMapContext {
+  mentor: {
+    id: bigint;
+    personId: bigint;
+    person: {
+      id: bigint;
+      realName: string;
+      orgUnit: { deptId: bigint | null; name: string } | null;
+    };
+  };
+  userNames: ReadonlyMap<string, string>;
+}
+
+/** 映射申诉时需要的考核摘要 + 用户姓名 */
+export interface AppealMapContext {
+  assessment: {
+    id: bigint;
+    period: string;
+    mentorId: bigint;
+    status: number;
+    mentor: { person: { realName: string } };
+  };
+  userNames: ReadonlyMap<string, string>;
+}
+
+function userRef(
+  id: bigint | null,
+  names: ReadonlyMap<string, string>,
+): AssessmentUserRefDto | null {
+  if (id === null) {
+    return null;
+  }
+  return {
+    userId: id.toString(),
+    name: names.get(id.toString()) ?? null,
+  };
+}
+
+function toMentorRef(
+  mentor: AssessmentMapContext['mentor'],
+): AssessmentMentorRefDto {
+  const orgUnit = mentor.person.orgUnit;
+  return {
+    profileId: mentor.id.toString(),
+    personId: mentor.personId.toString(),
+    name: mentor.person.realName,
+    deptId: orgUnit === null ? null : (orgUnit.deptId?.toString() ?? null),
+    deptName: orgUnit?.name ?? null,
+  };
+}
 
 function numberToString(value: number): string {
   return value.toFixed(2);
@@ -18,10 +74,12 @@ export function toAssessmentResponse(
   row: Assessment,
   metrics: AssessmentMetrics,
   weights: ResolvedWeights,
+  context: AssessmentMapContext,
 ): AssessmentResponseDto {
   return {
     id: row.id.toString(),
     mentorProfileId: row.mentorId.toString(),
+    mentor: toMentorRef(context.mentor),
     period: row.period,
     status: row.status,
     weights: {
@@ -50,6 +108,8 @@ export function toAssessmentResponse(
     finalComment: row.finalComment,
     finalReviewedAt:
       row.finalReviewedAt === null ? null : row.finalReviewedAt.toISOString(),
+    collegeSubmittedBy: userRef(row.collegeSubmittedBy, context.userNames),
+    finalReviewedBy: userRef(row.finalReviewedBy, context.userNames),
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -102,14 +162,26 @@ export function frozenWeights(
 }
 
 /** 申诉实体 → 响应 DTO（RES-04） */
-export function toAppealResponse(row: AssessmentAppeal): AppealResponseDto {
+export function toAppealResponse(
+  row: AssessmentAppeal,
+  context: AppealMapContext,
+): AppealResponseDto {
   return {
     id: row.id.toString(),
     assessmentId: row.assessmentId.toString(),
+    assessment: {
+      id: context.assessment.id.toString(),
+      period: context.assessment.period,
+      mentorProfileId: context.assessment.mentorId.toString(),
+      mentorName: context.assessment.mentor.person.realName,
+      status: context.assessment.status,
+    },
     reason: row.reason,
     status: row.status,
     reply: row.reply,
     handledAt: row.handledAt === null ? null : row.handledAt.toISOString(),
+    submittedBy: userRef(row.createdBy, context.userNames),
+    handledBy: userRef(row.handledBy, context.userNames),
     createdAt: row.createdAt.toISOString(),
   };
 }

@@ -38,13 +38,17 @@ export interface MetricsSource {
 /** 考核 + 导师 + 导师所在组织单元（部门范围判定用） */
 export type AssessmentWithMentor = Assessment & {
   mentor: MentorProfile & {
-    person: SyncPerson & { orgUnit: { deptId: bigint | null } | null };
+    person: SyncPerson & {
+      orgUnit: { deptId: bigint | null; name: string } | null;
+    };
   };
 };
 
 /** 导师档案 + 其人的组织单元（`POST /assessments` 的部门判定用） */
 export type ProfileWithDept = MentorProfile & {
-  person: SyncPerson & { orgUnit: { deptId: bigint | null } | null };
+  person: SyncPerson & {
+    orgUnit: { deptId: bigint | null; name: string } | null;
+  };
 };
 
 /** 提交初评时要冻结的整组数据（R55） */
@@ -206,13 +210,16 @@ export class AssessmentRepository implements MetricsSource {
     where: Prisma.AssessmentWhereInput,
     skip: number,
     take: number,
-  ): Promise<[Assessment[], number]> {
+  ): Promise<[AssessmentWithMentor[], number]> {
     return Promise.all([
       this.prisma.client.assessment.findMany({
         where,
         orderBy: [{ period: 'desc' }, { id: 'desc' }],
         skip,
         take,
+        include: {
+          mentor: { include: { person: { include: { orgUnit: true } } } },
+        },
       }),
       this.prisma.client.assessment.count({ where }),
     ]);
@@ -300,13 +307,30 @@ export class AssessmentRepository implements MetricsSource {
 
   // ── 申诉（Task 42）───────────────────────────────────────────────
 
-  createAppeal(
+  /**
+   * 提交申诉：同一事务里把考核 `2 APPROVED → 4 APPEALING` 并落申诉行。
+   *
+   * 条件更新是并发闸门：同一考核只有一条 `PENDING` 申诉能创建成功；
+   * `count === 0` 返回 `null`，调用方按状态冲突处理。
+   */
+  async createAppealAndMarkAppealing(
     assessmentId: bigint,
     reason: string,
-  ): Promise<AssessmentAppeal> {
-    return this.prisma.client.assessmentAppeal.create({
-      // createdBy / updatedBy 是类型占位，扩展按当前操作者重写（DB-05）
-      data: { assessmentId, reason, createdBy: 0n, updatedBy: 0n },
+  ): Promise<AssessmentAppeal | null> {
+    return this.prisma.client.$transaction(async (tx) => {
+      const updated = await tx.assessment.updateMany({
+        where: {
+          id: assessmentId,
+          status: ASSESSMENT_STATUS.APPROVED,
+        },
+        data: { status: ASSESSMENT_STATUS.APPEALING },
+      });
+      if (updated.count === 0) {
+        return null;
+      }
+      return tx.assessmentAppeal.create({
+        data: { assessmentId, reason, createdBy: 0n, updatedBy: 0n },
+      });
     });
   }
 
@@ -349,7 +373,9 @@ export class AssessmentRepository implements MetricsSource {
    * 或者这条已经被处理过。
    */
   async handleAppeal(
+    assessmentId: bigint,
     appealId: bigint,
+    nextAssessmentStatus: number,
     data: {
       status: number;
       reply: string;
@@ -358,8 +384,18 @@ export class AssessmentRepository implements MetricsSource {
     },
   ): Promise<AssessmentAppeal | null> {
     return this.prisma.client.$transaction(async (tx) => {
+      const assessmentUpdated = await tx.assessment.updateMany({
+        where: {
+          id: assessmentId,
+          status: ASSESSMENT_STATUS.APPEALING,
+        },
+        data: { status: nextAssessmentStatus },
+      });
+      if (assessmentUpdated.count === 0) {
+        return null;
+      }
       const updated = await tx.assessmentAppeal.updateMany({
-        where: { id: appealId, status: APPEAL_STATUS.PENDING },
+        where: { id: appealId, assessmentId, status: APPEAL_STATUS.PENDING },
         data,
       });
       if (updated.count === 0) {
@@ -367,5 +403,19 @@ export class AssessmentRepository implements MetricsSource {
       }
       return tx.assessmentAppeal.findFirst({ where: { id: appealId } });
     });
+  }
+
+  /** 批量取用户姓名：考核 / 申诉里的 reviewer / handler ID → 姓名 */
+  async findUserNamesByIds(
+    ids: readonly bigint[],
+  ): Promise<Map<string, string>> {
+    if (ids.length === 0) {
+      return new Map();
+    }
+    const rows = await this.prisma.client.sysUser.findMany({
+      where: { id: { in: [...ids] } },
+      select: { id: true, realName: true },
+    });
+    return new Map(rows.map((row) => [row.id.toString(), row.realName]));
   }
 }

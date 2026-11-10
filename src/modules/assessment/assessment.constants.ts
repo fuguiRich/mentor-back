@@ -10,16 +10,33 @@ import { BusinessException } from '../../common/errors/business.exception';
  * 1 COLLEGE_SUBMITTED  → 2 APPROVED            双创学院通过
  * 1 COLLEGE_SUBMITTED  → 3 RETURNED            双创学院退回（意见必填）
  * 3 RETURNED           → 1 COLLEGE_SUBMITTED   学院重评后再提交
+ * 2 APPROVED           → 4 APPEALING           导师提交申诉
+ * 4 APPEALING          → 5 APPEAL_ACCEPTED     双创学院受理
+ * 4 APPEALING          → 6 APPEAL_REJECTED     双创学院驳回
  * ```
  *
- * **终态**：`2 APPROVED`。`3 RETURNED` 不是终态（可再提交）。
+ * **终态**：`2 APPROVED` 可在申诉窗口内进入申诉链；`5 / 6` 是申诉终态，
+ * `3 RETURNED` 不是终态（可再提交）。申诉只改状态，不改等级。
  */
 export const ASSESSMENT_STATUS = {
   DRAFT: 0,
   COLLEGE_SUBMITTED: 1,
   APPROVED: 2,
   RETURNED: 3,
+  APPEALING: 4,
+  APPEAL_ACCEPTED: 5,
+  APPEAL_REJECTED: 6,
 } as const;
+
+/** 有终评等级的考核状态：统计只认这些（生效 / 申诉中 / 申诉已受理 / 申诉已驳回） */
+export const ASSESSMENT_FINAL_STATUSES = [
+  ASSESSMENT_STATUS.APPROVED,
+  ASSESSMENT_STATUS.APPEALING,
+  ASSESSMENT_STATUS.APPEAL_ACCEPTED,
+  ASSESSMENT_STATUS.APPEAL_REJECTED,
+] as const;
+
+export const ASSESSMENT_STATUS_VALUES = [0, 1, 2, 3, 4, 5, 6] as const;
 
 /** 考核等级：1 优秀 / 2 合格 / 3 不合格（§6.3 的三个档） */
 export const ASSESSMENT_GRADES = [1, 2, 3] as const;

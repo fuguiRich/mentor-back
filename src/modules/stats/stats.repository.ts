@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { APPOINTMENT_STATUS } from '../appointment/dto/create-appointment.dto';
+import { ASSESSMENT_FINAL_STATUSES } from '../assessment/assessment.constants';
 
 /** 每批读多少条档案（`loadResearchFields` 的分页粒度） */
 const RESEARCH_FIELD_BATCH = 500;
@@ -363,7 +364,7 @@ export class StatsRepository {
     }>
   > {
     return this.prisma.client.assessment.findMany({
-      where: { ...where, status: 2 },
+      where: { ...where, status: { in: [...ASSESSMENT_FINAL_STATUSES] } },
       select: {
         finalGrade: true,
         mentor: {

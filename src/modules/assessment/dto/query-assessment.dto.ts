@@ -3,9 +3,12 @@ import { Transform } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, Matches } from 'class-validator';
 import { PaginationQueryDto } from '../../../common/dto/pagination-query.dto';
 import { toNumberIfNumericString } from '../../appointment/dto/create-appointment.dto';
-import { ASSESSMENT_GRADES } from '../assessment.constants';
+import {
+  ASSESSMENT_GRADES,
+  ASSESSMENT_STATUS_VALUES,
+} from '../assessment.constants';
 
-const STATUSES = [0, 1, 2, 3] as const;
+const STATUSES = ASSESSMENT_STATUS_VALUES;
 
 /** `GET /assessments` 的查询参数（Task 41） */
 export class QueryAssessmentDto extends PaginationQueryDto {
@@ -20,7 +23,9 @@ export class QueryAssessmentDto extends PaginationQueryDto {
   period?: string;
 
   @ApiPropertyOptional({
-    description: '状态：0 待初评 / 1 待终评 / 2 已生效 / 3 已退回',
+    description:
+      '状态：0 待初评 / 1 待终评 / 2 已生效 / 3 已退回 / 4 申诉中 / ' +
+      '5 申诉已受理 / 6 申诉已驳回',
     enum: STATUSES,
   })
   @IsOptional()

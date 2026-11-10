@@ -30,6 +30,8 @@ import {
   frozenWeights,
   toAppealResponse,
   toAssessmentResponse,
+  type AppealMapContext,
+  type AssessmentMapContext,
 } from './assessment.mapper';
 import {
   AssessmentRepository,
@@ -119,7 +121,12 @@ export class AssessmentService {
       weights,
       targets,
     );
-    return toAssessmentResponse(created, metrics, weights);
+    return toAssessmentResponse(
+      created,
+      metrics,
+      weights,
+      await this.assessmentContext(profile, []),
+    );
   }
 
   /**
@@ -260,7 +267,14 @@ export class AssessmentService {
     if (updated === null) {
       throw this.transitionInvalid();
     }
-    return toAssessmentResponse(updated, metrics, weights);
+    return toAssessmentResponse(
+      updated,
+      metrics,
+      weights,
+      await this.assessmentContext(assessment.mentor, [
+        updated.collegeSubmittedBy,
+      ]),
+    );
   }
 
   // ── 内部 ──────────────────────────────────────────────────────────
@@ -314,6 +328,9 @@ export class AssessmentService {
       updated,
       frozenMetrics(updated),
       frozenWeights(updated, weights),
+      await this.assessmentContext(assessment.mentor, [
+        updated.finalReviewedBy,
+      ]),
     );
   }
 
@@ -358,6 +375,14 @@ export class AssessmentService {
       query.pageSize,
     );
     const { weights } = await this.loadScoringConfig();
+    const reviewerIds = rows.flatMap((row) =>
+      [row.collegeSubmittedBy, row.finalReviewedBy].filter(
+        (id): id is bigint => id !== null,
+      ),
+    );
+    const userNames = await this.repository.findUserNamesByIds([
+      ...new Set(reviewerIds),
+    ]);
 
     return {
       list: rows.map((row) =>
@@ -365,6 +390,7 @@ export class AssessmentService {
           row,
           frozenMetrics(row),
           this.weightsForRow(row, weights),
+          { mentor: row.mentor, userNames },
         ),
       ),
       total,
@@ -390,6 +416,10 @@ export class AssessmentService {
     await this.assertVisible(assessment, caller);
 
     const { weights, targets } = await this.loadScoringConfig();
+    const context = await this.assessmentContext(assessment.mentor, [
+      assessment.collegeSubmittedBy,
+      assessment.finalReviewedBy,
+    ]);
     if (assessment.status === ASSESSMENT_STATUS.DRAFT) {
       const metrics = await this.metricsFor(
         assessment.mentorId,
@@ -397,12 +427,13 @@ export class AssessmentService {
         weights,
         targets,
       );
-      return toAssessmentResponse(assessment, metrics, weights);
+      return toAssessmentResponse(assessment, metrics, weights, context);
     }
     return toAssessmentResponse(
       assessment,
       frozenMetrics(assessment),
       frozenWeights(assessment, weights),
+      context,
     );
   }
 
@@ -412,8 +443,8 @@ export class AssessmentService {
    * 守卫：考核不存在 → **404 / 35001**；不是该导师本人 → **403 / 10003**；
    * `status ≠ 2 APPROVED` → **409 / 35006**；已有待处理申诉 → **409 / 35005**。
    *
-   * **不修改 `Assessment`**（R56）：申诉只是「我不同意，请复核」，
-   * 它不该在受理之前就改变结果。
+   * **不修改等级**（R56）：申诉只是「我不同意，请复核」，
+   * 它不改终评等级；但考核状态会推进到 `4 申诉中`，处理后再到 5 / 6。
    */
   async createAppeal(
     id: bigint,
@@ -434,16 +465,29 @@ export class AssessmentService {
       throw this.forbidden();
     }
 
+    // 已有待处理申诉时考核状态是 4 APPEALING；先查 pending，让重复提交仍报 35005
+    if ((await this.repository.findPendingAppeal(id)) !== null) {
+      throw this.appealPending();
+    }
     if (assessment.status !== ASSESSMENT_STATUS.APPROVED) {
       throw this.appealNotAllowed();
     }
-    const pending = await this.repository.findPendingAppeal(id);
-    if (pending !== null) {
-      throw this.appealPending();
-    }
 
-    const created = await this.repository.createAppeal(id, dto.reason);
-    return toAppealResponse(created);
+    const created = await this.repository.createAppealAndMarkAppealing(
+      id,
+      dto.reason,
+    );
+    if (created === null) {
+      throw this.transitionInvalid();
+    }
+    return toAppealResponse(
+      created,
+      await this.appealContext(
+        { ...assessment, status: ASSESSMENT_STATUS.APPEALING },
+        ASSESSMENT_STATUS.APPEALING,
+        [created.createdBy, created.handledBy],
+      ),
+    );
   }
 
   /** `GET /assessments/:id/appeals` —— 可见性与考核详情同源 */
@@ -463,8 +507,27 @@ export class AssessmentService {
       (query.page - 1) * query.pageSize,
       query.pageSize,
     );
+    const actorIds = rows.flatMap((row) =>
+      [row.createdBy, row.handledBy].filter(
+        (userId): userId is bigint => userId !== null,
+      ),
+    );
+    const userNames = await this.repository.findUserNamesByIds([
+      ...new Set(actorIds),
+    ]);
     return {
-      list: rows.map(toAppealResponse),
+      list: rows.map((row) =>
+        toAppealResponse(row, {
+          assessment: {
+            id: assessment.id,
+            period: assessment.period,
+            mentorId: assessment.mentorId,
+            status: assessment.status,
+            mentor: assessment.mentor,
+          },
+          userNames,
+        }),
+      ),
       total,
       page: query.page,
       pageSize: query.pageSize,
@@ -494,19 +557,35 @@ export class AssessmentService {
       throw this.appealNotFound();
     }
 
-    const updated = await this.repository.handleAppeal(appealId, {
-      status:
-        dto.decision === 'accept'
-          ? APPEAL_STATUS.ACCEPTED
-          : APPEAL_STATUS.REJECTED,
-      reply: dto.reply,
-      handledAt: new Date(),
-      handledBy: caller.userId,
-    });
+    const nextStatus =
+      dto.decision === 'accept'
+        ? ASSESSMENT_STATUS.APPEAL_ACCEPTED
+        : ASSESSMENT_STATUS.APPEAL_REJECTED;
+    const updated = await this.repository.handleAppeal(
+      id,
+      appealId,
+      nextStatus,
+      {
+        status:
+          dto.decision === 'accept'
+            ? APPEAL_STATUS.ACCEPTED
+            : APPEAL_STATUS.REJECTED,
+        reply: dto.reply,
+        handledAt: new Date(),
+        handledBy: caller.userId,
+      },
+    );
     if (updated === null) {
       throw this.transitionInvalid();
     }
-    return toAppealResponse(updated);
+    return toAppealResponse(
+      updated,
+      await this.appealContext(
+        { ...assessment, status: nextStatus },
+        nextStatus,
+        [updated.createdBy, updated.handledBy],
+      ),
+    );
   }
 
   /** `status = 0` 用当前配置的权重；已提交的用冻结在行上的那一组 */
@@ -517,6 +596,45 @@ export class AssessmentService {
     return row.status === ASSESSMENT_STATUS.DRAFT
       ? current
       : frozenWeights(row, current);
+  }
+
+  /** 组装考核响应的关联实体：导师 + 初评 / 终评审核人姓名 */
+  private async assessmentContext(
+    mentor: {
+      id: bigint;
+      personId: bigint;
+      person: {
+        id: bigint;
+        realName: string;
+        orgUnit: { deptId: bigint | null; name: string } | null;
+      };
+    },
+    userIds: ReadonlyArray<bigint | null>,
+  ): Promise<AssessmentMapContext> {
+    const ids = [...new Set(userIds.filter((id): id is bigint => id !== null))];
+    return {
+      mentor,
+      userNames: await this.repository.findUserNamesByIds(ids),
+    };
+  }
+
+  /** 组装申诉响应的关联实体：考核摘要 + 提交人 / 处理人姓名 */
+  private async appealContext(
+    assessment: AssessmentWithMentor,
+    status: number,
+    userIds: ReadonlyArray<bigint | null>,
+  ): Promise<AppealMapContext> {
+    const ids = [...new Set(userIds.filter((id): id is bigint => id !== null))];
+    return {
+      assessment: {
+        id: assessment.id,
+        period: assessment.period,
+        mentorId: assessment.mentorId,
+        status,
+        mentor: assessment.mentor,
+      },
+      userNames: await this.repository.findUserNamesByIds(ids),
+    };
   }
 
   /** 列表的 where：先按查询参数，再按调用者的有效数据范围收窄 */
