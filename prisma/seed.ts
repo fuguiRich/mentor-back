@@ -1331,10 +1331,66 @@ async function backfillSuperAdminRole(): Promise<void> {
   console.log(`超管角色回填：角色 +${bound}，标志 +${flagged}`);
 }
 
+/**
+ * 清理历史遗留的「（sso:xx）」部门后缀。
+ *
+ * 旧同步在「同级已有同名部门且被别的同步行占用」时会造一个带内部 code 的
+ * 副本。后缀会让同一院系在 SSO 登录与定时同步之间对不上，按部门过滤被拆成
+ * 两条。现在同步改为直接复用同名部门；这里把老数据也收敛回去：
+ * - 有同名活跃部门 → 用户 / 同步组织改挂过去，软删带后缀的那条；
+ * - 没有 → 去掉后缀，原地改名。
+ */
+async function cleanupSsoDeptSuffixes(): Promise<void> {
+  const rows = await prisma.sysDept.findMany({
+    where: { deletedAt: null, name: { contains: '（sso:' } },
+  });
+  let merged = 0;
+  let renamed = 0;
+  for (const dept of rows) {
+    const base = dept.name.replace(/（sso:[^）]*）$/, '');
+    if (base === dept.name) {
+      continue;
+    }
+    const sibling = await prisma.sysDept.findFirst({
+      where: {
+        parentId: dept.parentId,
+        name: base,
+        deletedAt: null,
+        id: { not: dept.id },
+      },
+    });
+    if (sibling !== null) {
+      await prisma.sysUser.updateMany({
+        where: { deptId: dept.id },
+        data: { deptId: sibling.id },
+      });
+      await prisma.syncOrgUnit.updateMany({
+        where: { deptId: dept.id },
+        data: { deptId: sibling.id },
+      });
+      await prisma.sysDept.update({
+        where: { id: dept.id },
+        data: { deletedAt: new Date(), deletedBy: SYSTEM_USER_ID },
+      });
+      merged += 1;
+    } else {
+      await prisma.sysDept.update({
+        where: { id: dept.id },
+        data: { name: base },
+      });
+      renamed += 1;
+    }
+  }
+  if (merged + renamed > 0) {
+    console.log(`SSO 部门后缀清理：合并 ${merged}，改名 ${renamed}`);
+  }
+}
+
 async function main(): Promise<void> {
   await seedRoles();
   await seedPermissions();
   await seedConfigs();
+  await cleanupSsoDeptSuffixes();
 
   // 用 admin 账号判断「seed 是否已经跑过」，而不是根部门的名字：
   // SSO 同步会把根部门改名（如「长沙医学院」），按名字会误判成没播过。

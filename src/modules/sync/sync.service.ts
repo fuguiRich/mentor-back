@@ -411,33 +411,24 @@ export class SyncService {
     }
 
     if (existing === null) {
-      // 本地已有同级同名部门（演示数据 / 历史数据）时复用，避免撞
-      // sys_dept 的 (parent_id, name_active) 唯一键。
+      // 本地已有同级同名部门（演示数据 / 历史数据 / 另一条同步行）时直接复用。
+      // **不加 `（sso:xx）` 后缀**：后缀会让同一部门在 SSO 登录与定时同步之间
+      // 对不上，按部门过滤时把同院系拆成两条。宁可让两个源部门共享一个本地部门，
+      // 也不要把可见名称改成带内部 code 的字符串。
       const sibling = await this.projection.findDeptByParentAndName(
         desired.parentId,
         desired.name,
       );
       if (sibling !== null) {
-        const linked = await this.orgs.findByDeptId(sibling.id);
-        if (linked === null || linked.id === current.id) {
-          current = await this.orgs.linkDept(current, sibling.id);
-          byCode.set(row.code, current);
-          return null;
-        }
-        // 已被别的同步行占用：换一个本地名，不能把两个源部门并成一个
-        const dept = await this.projection.createDept({
-          ...desired,
-          name: `${desired.name}（${row.code}）`,
-        });
-        current = await this.orgs.linkDept(current, dept.id);
+        current = await this.orgs.linkDept(current, sibling.id);
         byCode.set(row.code, current);
         return null;
       }
       const dept = await this.projection.createDept(desired);
       current = await this.orgs.linkDept(current, dept.id);
     } else {
-      // 之前因为同名冲突被加了后缀的本地部门，后续同步不能把名字改回源名——
-      // 那会再次撞上 (parent_id, name_active) 唯一键。保留已有本地名。
+      // 已有本地部门：名字回到源名。若源名已被另一条活跃部门占用（极老数据
+      // 留下的带后缀副本），保留现有本地名，避免撞唯一键；正常同步不会走到这里。
       const sibling = await this.projection.findDeptByParentAndName(
         desired.parentId,
         desired.name,

@@ -540,7 +540,7 @@ describe('SSO 定时同步 (e2e)', () => {
     const runs = app.get(SyncRunRepository);
     expect(await runs.findLastFinishedByMode('sso', 'full')).not.toBeNull();
   });
-  it('本地同名部门已被别的同步行占用 → 新建带后缀部门，后续同步保持稳定', async () => {
+  it('本地同名部门已被别的同步行占用 → 复用同一部门，不加（sso:xx）后缀', async () => {
     await reset();
 
     const root = await prisma.client.sysDept.findFirst({
@@ -577,10 +577,19 @@ describe('SSO 定时同步 (e2e)', () => {
     });
     expect(first.status).toBe(SyncRunStatus.OK);
 
-    const suffixed = await prisma.client.sysDept.findFirst({
-      where: { name: '计算机学院（sso:10）' },
+    // 不再造带后缀的副本：sso:10 直接复用本地同名部门
+    const ssoUnit = await prisma.client.syncOrgUnit.findFirst({
+      where: { code: 'sso:10', deletedAt: null },
     });
-    expect(suffixed).not.toBeNull();
+    expect(ssoUnit?.deptId).toBe(localCollege.id);
+    const sameName = await prisma.client.sysDept.findMany({
+      where: {
+        parentId: root?.id ?? null,
+        name: '计算机学院',
+        deletedAt: null,
+      },
+    });
+    expect(sameName).toHaveLength(1);
 
     const second = await sync.runOnce(makeSource(defaultFetch()), {
       mode: 'full',
@@ -589,9 +598,9 @@ describe('SSO 定时同步 (e2e)', () => {
     expect(
       (
         await prisma.client.sysDept.findFirst({
-          where: { id: suffixed?.id },
+          where: { id: localCollege.id },
         })
       )?.name,
-    ).toBe('计算机学院（sso:10）');
+    ).toBe('计算机学院');
   });
 });
