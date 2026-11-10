@@ -504,6 +504,14 @@ async function seedPermissions(): Promise<void> {
 const DEMO_DATA_ENABLED =
   process.env.SEED_DEMO_DATA === '1' || process.env.SEED_DEMO_DATA === 'true';
 
+/**
+ * 手动测试前把演示账号恢复到已知状态：密码、状态、人员类型、角色都按
+ * `DEMO_PEOPLE` / `DEMO_ADMINS` 重置（不碰导师档案等业务数据）。
+ */
+const RESET_DEMO_ACCOUNTS =
+  process.env.SEED_RESET_DEMO_PASSWORDS === '1' ||
+  process.env.SEED_RESET_DEMO_PASSWORDS === 'true';
+
 const DEMO_PASSWORD = process.env.SEED_DEMO_PASSWORD ?? 'Mentor@2026';
 
 interface DemoOrgSpec {
@@ -748,6 +756,115 @@ async function ensureDemoUser(
 }
 
 /**
+ * 手动测试前重置演示账号：密码、状态、姓名、部门、人员类型、角色全部回到
+ * `DEMO_PEOPLE` / `DEMO_ADMINS` 的规格。只动账号与同步人员行，不动导师档案、
+ * 预约、成果等业务数据。
+ */
+async function resetDemoAccounts(
+  orgs: ReadonlyMap<string, { unitId: bigint; deptId: bigint }>,
+  roleIds: ReadonlyMap<string, bigint>,
+): Promise<void> {
+  if (!RESET_DEMO_ACCOUNTS) {
+    return;
+  }
+
+  const applyRoles = async (
+    userId: bigint,
+    desiredCodes: readonly string[],
+  ): Promise<void> => {
+    const desired = desiredCodes
+      .map((code) => roleIds.get(code))
+      .filter((id): id is bigint => id !== undefined);
+    await prisma.sysUserRole.deleteMany({
+      where: { userId, roleId: { notIn: desired } },
+    });
+    const current = await prisma.sysUserRole.findMany({
+      where: { userId },
+      select: { roleId: true },
+    });
+    for (const roleId of desired) {
+      if (!current.some((row) => row.roleId === roleId)) {
+        await prisma.sysUserRole.create({
+          data: {
+            userId,
+            roleId,
+            createdBy: SYSTEM_USER_ID,
+            updatedBy: SYSTEM_USER_ID,
+          },
+        });
+      }
+    }
+  };
+
+  for (const spec of DEMO_PEOPLE) {
+    const org = orgs.get(spec.orgCode);
+    if (org === undefined) {
+      continue;
+    }
+    const user = await prisma.sysUser.findFirst({
+      where: { username: spec.login, deletedAt: null },
+    });
+    if (user === null) {
+      continue;
+    }
+    await prisma.sysUser.update({
+      where: { id: user.id },
+      data: {
+        password: hashSync(DEMO_PASSWORD, BCRYPT_ROUNDS),
+        realName: spec.realName,
+        deptId: org.deptId,
+        status: 1,
+        authSource: spec.personType === 'externalMentor' ? 'local' : 'sso',
+      },
+    });
+    const person = await prisma.syncPerson.findFirst({
+      where: { login: spec.login, deletedAt: null },
+    });
+    if (person !== null) {
+      await prisma.syncPerson.update({
+        where: { id: person.id },
+        data: {
+          realName: spec.realName,
+          personType: spec.personType,
+          orgUnitId: org.unitId,
+        },
+      });
+    }
+    await applyRoles(user.id, spec.roles);
+  }
+
+  for (const spec of DEMO_ADMINS) {
+    const org = orgs.get(spec.orgCode);
+    if (org === undefined) {
+      continue;
+    }
+    const user = await prisma.sysUser.findFirst({
+      where: { username: spec.login, deletedAt: null },
+    });
+    if (user === null) {
+      continue;
+    }
+    await prisma.sysUser.update({
+      where: { id: user.id },
+      data: {
+        password: hashSync(DEMO_PASSWORD, BCRYPT_ROUNDS),
+        realName: spec.realName,
+        deptId: org.deptId,
+        status: 1,
+        authSource: 'local',
+      },
+    });
+    await applyRoles(user.id, spec.roles);
+  }
+
+  console.log(
+    `演示账号已重置：${[...DEMO_PEOPLE, ...DEMO_ADMINS]
+      .map((spec) => spec.login)
+      .join(' / ')}（密码 ${DEMO_PASSWORD}）`,
+  );
+}
+
+/**
  * 学生演示账号的**强制校正**。
  *
  * `ensureDemoUser` 对已存在的账号只补角色、不改密码 / 人员类型——这对普通
@@ -963,6 +1080,8 @@ async function seedDemoData(rootDeptId: bigint): Promise<void> {
     }
     await ensureDemoUser(spec, org.deptId, roleIds);
   }
+
+  await resetDemoAccounts(orgs, roleIds);
 
   // ---- 3. 三份已生效的导师档案 ----
   // 没有它们，`PUT /mentor/profiles/:id`（后台改字段）、`profile-change` 与
