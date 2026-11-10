@@ -14,6 +14,7 @@ import { SessionStore } from '../../infra/redis/session-store.service';
 import { DataScopeService } from '../data-scope/data-scope.service';
 import { DeptService } from '../dept/dept.service';
 import { RoleService } from '../role/role.service';
+import { SUPER_ADMIN_ROLE_CODE } from '../role/role.constants';
 import { UserRepository } from './user.repository';
 import { toUserDetailResponse, toUserResponse } from './user.mapper';
 import type { UserWithDeptName } from './user.repository';
@@ -266,6 +267,22 @@ export class UserService {
       await this.roles.assertExists(roleId); // → 22101（R13 的括号）
     }
 
+    // 超级管理员是「角色 + 标志」双写：建号只绑角色会让 isSuperAdmin 与角色
+    // 不一致。统一要求建号后再调 PUT /users/:id/super-admin。
+    const superAdminRoleId = await this.roles.findIdByCode(
+      SUPER_ADMIN_ROLE_CODE,
+    );
+    if (
+      superAdminRoleId !== null &&
+      targetIds.some((roleId) => roleId === superAdminRoleId)
+    ) {
+      throw new BusinessException(
+        ErrorCode.PARAM_INVALID,
+        '建号不能直接绑定超级管理员角色，请建号后设置超级管理员',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
     // deptId 不存在 → PARAM_INVALID = 10001（这是建号入参非法，不是部门详情语义，
     // 所以不走 assertExists 的 24101）。只读校验，不是第二条写 SysDept 的路。
     if (!(await this.depts.exists(BigInt(dto.deptId)))) {
@@ -343,7 +360,24 @@ export class UserService {
       );
     }
     const current = await this.mustFind(id);
-    if (current.isSuperAdmin === dto.isSuperAdmin) {
+    const superAdminRoleId = await this.roles.findIdByCode(
+      SUPER_ADMIN_ROLE_CODE,
+    );
+    if (superAdminRoleId === null) {
+      throw new BusinessException(
+        ErrorCode.ROLE_NOT_FOUND,
+        '超级管理员角色不存在，请先执行 seed',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    const currentRoleIds = await this.roles.findRoleIdsByUserId(id);
+    const hasSuperAdminRole = currentRoleIds.some(
+      (roleId) => roleId === superAdminRoleId,
+    );
+    if (
+      current.isSuperAdmin === dto.isSuperAdmin &&
+      hasSuperAdminRole === dto.isSuperAdmin
+    ) {
       return toUserResponse(current);
     }
     if (!dto.isSuperAdmin && id === caller.userId) {
@@ -354,12 +388,22 @@ export class UserService {
       );
     }
 
-    // 先作废再落库：与改密同构，失败可恢复（重新设回即可）
+    // 角色与标志双写：先补 / 摘角色，再改标志，最后踢掉旧令牌
+    if (dto.isSuperAdmin && !hasSuperAdminRole) {
+      await this.roles.replaceUserRoles(id, [superAdminRoleId], []);
+    } else if (!dto.isSuperAdmin && hasSuperAdminRole) {
+      await this.roles.replaceUserRoles(id, [], [superAdminRoleId]);
+    }
+
+    const updated =
+      current.isSuperAdmin === dto.isSuperAdmin
+        ? current
+        : await this.repository.update(id, {
+            username: current.username,
+            isSuperAdmin: dto.isSuperAdmin,
+          });
     await this.sessions.revokeSessions(id);
-    const updated = await this.repository.update(id, {
-      username: current.username,
-      isSuperAdmin: dto.isSuperAdmin,
-    });
+    await this.sessions.clearPermissions([id]);
     return toUserResponse(updated);
   }
 
@@ -394,12 +438,32 @@ export class UserService {
   async assignRoles(
     id: bigint,
     dto: AssignUserRolesDto,
+    caller: RequestUser,
   ): Promise<UserDetailResponseDto> {
-    await this.mustFind(id);
+    const current = await this.mustFind(id);
 
     const targetIds = [...new Set(dto.roleIds.map((raw) => BigInt(raw)))];
     for (const roleId of targetIds) {
       await this.roles.assertExists(roleId); // → 22101（R13 的括号）
+    }
+
+    const superAdminRoleId = await this.roles.findIdByCode(
+      SUPER_ADMIN_ROLE_CODE,
+    );
+    const wantsSuperAdmin =
+      superAdminRoleId !== null &&
+      targetIds.some((roleId) => roleId === superAdminRoleId);
+
+    // 超管角色是提权入口：授给谁 / 从谁身上摘，都只能由超管操作
+    if ((wantsSuperAdmin || current.isSuperAdmin) && !caller.isSuperAdmin) {
+      throw new BusinessException(
+        ErrorCode.FORBIDDEN,
+        '无权限',
+        HttpStatus.FORBIDDEN,
+      );
+    }
+    if (current.isSuperAdmin && !wantsSuperAdmin && id === caller.userId) {
+      throw this.superAdminProtected();
     }
 
     const currentIds = await this.roles.findRoleIdsByUserId(id);
@@ -414,6 +478,16 @@ export class UserService {
     );
 
     await this.roles.replaceUserRoles(id, toAdd, toRemove);
+
+    // 角色集合里含 / 不含 super_admin，必须同步布尔标志——两者是同一个身份
+    if (current.isSuperAdmin !== wantsSuperAdmin) {
+      await this.repository.update(id, {
+        username: current.username,
+        isSuperAdmin: wantsSuperAdmin,
+      });
+      // JWT 里带 isSuperAdmin，不重登就会继续用旧身份
+      await this.sessions.revokeSessions(id);
+    }
 
     // R10 ③：改的是这个用户的角色，清的就是这个用户的权限缓存
     await this.sessions.clearPermissions([id]);

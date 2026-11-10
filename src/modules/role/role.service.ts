@@ -5,6 +5,7 @@ import { BusinessException } from '../../common/errors/business.exception';
 import { SessionStore } from '../../infra/redis/session-store.service';
 import { PermissionService } from '../permission/permission.service';
 import { RoleRepository } from './role.repository';
+import { isSuperAdminRoleCode } from './role.constants';
 import { toRoleDetailResponse, toRoleResponse } from './role.mapper';
 import type { SysRole } from '@prisma/client';
 import type { QueryRoleDto } from './dto/query-role.dto';
@@ -113,6 +114,7 @@ export class RoleService {
     if (current === null) {
       this.notFound();
     }
+    this.assertBuiltInRoleUnchanged(current, dto);
 
     // PartialType 给每个字段补的 @IsOptional() 挡不住 null——它只跳过 null / undefined，
     // 所以 `code: null` / `status: null` 会一路到达这里；而这两列在库里是 NOT NULL，
@@ -175,7 +177,13 @@ export class RoleService {
    * 少一个角色的权限，不会多）。dept 的「有用户就拒绝」是 dept 的规则。
    */
   async remove(id: bigint): Promise<void> {
-    await this.assertExists(id);
+    const role = await this.repository.findById(id);
+    if (role === null) {
+      this.notFound();
+    }
+    if (isSuperAdminRoleCode(role.code)) {
+      throw this.builtInRoleProtected();
+    }
 
     // 受影响用户必须在清连接表**之前**查——deleteWithRefs 一跑就查不到了（R10 ⑥）
     const userIds = await this.repository.findUserIdsByRoleId(id);
@@ -192,6 +200,9 @@ export class RoleService {
     const current = await this.repository.findById(id);
     if (current === null) {
       this.notFound();
+    }
+    if (isSuperAdminRoleCode(current.code) && dto.status !== 1) {
+      throw this.builtInRoleProtected();
     }
 
     const updated = await this.repository.update(id, {
@@ -297,6 +308,29 @@ export class RoleService {
       '角色编码已存在',
       HttpStatus.CONFLICT,
     );
+  }
+
+  private builtInRoleProtected(): BusinessException {
+    return new BusinessException(
+      ErrorCode.ROLE_BUILT_IN_PROTECTED,
+      '内置超级管理员角色受保护，不能修改或删除',
+      HttpStatus.CONFLICT,
+    );
+  }
+
+  private assertBuiltInRoleUnchanged(
+    current: SysRole,
+    dto: UpdateRoleDto,
+  ): void {
+    if (!isSuperAdminRoleCode(current.code)) {
+      return;
+    }
+    const changesCode = dto.code !== undefined && dto.code !== current.code;
+    const changesScope = dto.dataScope !== undefined && dto.dataScope !== 'all';
+    const disables = dto.status !== undefined && dto.status !== 1;
+    if (changesCode || changesScope || disables) {
+      throw this.builtInRoleProtected();
+    }
   }
 
   private async clearCachesFor(userIds: bigint[]): Promise<void> {

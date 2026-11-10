@@ -263,7 +263,8 @@ export class UserController {
   async assignRoles(
     @Param() params: UserParamDto,
     @Body() dto: AssignUserRolesDto,
+    @CurrentUser() caller: RequestUser,
   ): Promise<UserDetailResponseDto> {
-    return this.userService.assignRoles(BigInt(params.id), dto);
+    return this.userService.assignRoles(BigInt(params.id), dto, caller);
   }
 }

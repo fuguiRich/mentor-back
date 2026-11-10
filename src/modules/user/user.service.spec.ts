@@ -162,6 +162,7 @@ function buildService(
       calls.push({ name: 'roles.assertExists', args: [id] });
       return Promise.resolve();
     },
+    findIdByCode: (): Promise<bigint | null> => Promise.resolve(99n),
     findRoleIdsByUserId: (): Promise<bigint[]> => Promise.resolve([]),
     replaceUserRoles: (
       userId: bigint,
@@ -509,7 +510,7 @@ describe('UserService', () => {
       },
     );
 
-    await service.assignRoles(9n, { roleIds: ['2', '3'] });
+    await service.assignRoles(9n, { roleIds: ['2', '3'] }, caller());
 
     expect(replaceArgs).toHaveLength(1);
     expect(replaceArgs[0].toAdd).toEqual([3n]);
@@ -540,7 +541,7 @@ describe('UserService', () => {
       },
     );
 
-    const result = service.assignRoles(9n, { roleIds: ['1', '999'] });
+    const result = service.assignRoles(9n, { roleIds: ['1', '999'] }, caller());
 
     await expect(result).rejects.toMatchObject({
       response: { code: ErrorCode.ROLE_NOT_FOUND },

@@ -230,6 +230,30 @@ describe('RoleService', () => {
     expect(cleared).toEqual([[10n, 20n]]);
   });
 
+  it('7b. 内置 super_admin：删除 / 改 code / 改 scope / 停用 → 22103', async () => {
+    const { service } = buildService({
+      findById: (): Promise<SysRole | null> =>
+        Promise.resolve(role(9n, { code: 'super_admin', dataScope: 'all' })),
+    });
+
+    await expect(service.remove(9n)).rejects.toMatchObject({
+      response: { code: ErrorCode.ROLE_BUILT_IN_PROTECTED },
+    });
+    await expect(
+      service.update(9n, { code: 'other_code' }),
+    ).rejects.toMatchObject({
+      response: { code: ErrorCode.ROLE_BUILT_IN_PROTECTED },
+    });
+    await expect(
+      service.update(9n, { dataScope: 'self' }),
+    ).rejects.toMatchObject({
+      response: { code: ErrorCode.ROLE_BUILT_IN_PROTECTED },
+    });
+    await expect(service.updateStatus(9n, { status: 0 })).rejects.toMatchObject(
+      { response: { code: ErrorCode.ROLE_BUILT_IN_PROTECTED } },
+    );
+  });
+
   it('8. updateStatus 同值 → clearPermissions 未被调用；异值 → 被调用', async () => {
     // 同值（当前 status=1，目标也是 1）
     const same = buildService({

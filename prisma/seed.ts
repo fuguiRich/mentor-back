@@ -41,6 +41,8 @@ const SEED_ROLES = [
     dataScope: 'deptAndChildren',
   },
   { code: 'sc_admin', name: '创新创业学院管理员', dataScope: 'all' },
+  // 内置超管角色：与 SysUser.isSuperAdmin 同步，删除 / 改 code / 停用会被 22103 拒绝
+  { code: 'super_admin', name: '超级管理员', dataScope: 'all' },
 ] as const;
 
 /**
@@ -1273,6 +1275,62 @@ async function backfillTeacherRoles(): Promise<void> {
   );
 }
 
+/**
+ * 超管角色回填：`isSuperAdmin=true` 的用户必须持有 `super_admin` 角色；
+ * 反之持有该角色的用户也必须置标志。两边任意一边缺都补上，保持双写一致。
+ */
+async function backfillSuperAdminRole(): Promise<void> {
+  const role = await prisma.sysRole.findFirst({
+    where: { code: 'super_admin', deletedAt: null },
+  });
+  if (role === null) {
+    console.log('超管角色回填跳过：super_admin 角色不存在');
+    return;
+  }
+
+  const admins = await prisma.sysUser.findMany({
+    where: { isSuperAdmin: true, deletedAt: null },
+    select: { id: true },
+  });
+  let bound = 0;
+  for (const user of admins) {
+    const existing = await prisma.sysUserRole.findFirst({
+      where: { userId: user.id, roleId: role.id },
+    });
+    if (existing === null) {
+      await prisma.sysUserRole.create({
+        data: {
+          userId: user.id,
+          roleId: role.id,
+          createdBy: SYSTEM_USER_ID,
+          updatedBy: SYSTEM_USER_ID,
+        },
+      });
+      bound += 1;
+    }
+  }
+
+  const holders = await prisma.sysUserRole.findMany({
+    where: { roleId: role.id },
+    select: { userId: true },
+  });
+  let flagged = 0;
+  for (const holder of holders) {
+    const user = await prisma.sysUser.findFirst({
+      where: { id: holder.userId, isSuperAdmin: false, deletedAt: null },
+    });
+    if (user !== null) {
+      await prisma.sysUser.update({
+        where: { id: user.id },
+        data: { isSuperAdmin: true },
+      });
+      flagged += 1;
+    }
+  }
+
+  console.log(`超管角色回填：角色 +${bound}，标志 +${flagged}`);
+}
+
 async function main(): Promise<void> {
   await seedRoles();
   await seedPermissions();
@@ -1294,6 +1352,7 @@ async function main(): Promise<void> {
       // 演示数据走自己的幂等逻辑：老库上第一次打开 SEED_DEMO_DATA 也要能补出来
       await seedDemoData(existingDept.id);
       await backfillTeacherRoles();
+      await backfillSuperAdminRole();
       return;
     }
     // 极端情况：admin 在但根部门没了。只补根部门，不再建 admin。
@@ -1310,6 +1369,7 @@ async function main(): Promise<void> {
     });
     await seedDemoData(repaired.id);
     await backfillTeacherRoles();
+    await backfillSuperAdminRole();
     return;
   }
 
@@ -1355,6 +1415,7 @@ async function main(): Promise<void> {
 
   await seedDemoData(dept.id);
   await backfillTeacherRoles();
+  await backfillSuperAdminRole();
 }
 
 main()

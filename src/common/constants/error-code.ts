@@ -57,6 +57,7 @@ export enum ErrorCode {
   // 角色模块 22000-22999
   ROLE_NOT_FOUND = 22101,
   ROLE_CODE_TAKEN = 22102,
+  ROLE_BUILT_IN_PROTECTED = 22103,
 
   // 权限模块 23000-23999
   PERMISSION_NOT_FOUND = 23101,
@@ -264,6 +265,8 @@ export const ERROR_CODE_DESCRIPTIONS: Record<ErrorCode, string> = {
   [ErrorCode.USER_SUPER_ADMIN_PROTECTED]: '超级管理员受保护，不能执行该操作',
   [ErrorCode.ROLE_NOT_FOUND]: '角色不存在',
   [ErrorCode.ROLE_CODE_TAKEN]: '角色编码已存在',
+  [ErrorCode.ROLE_BUILT_IN_PROTECTED]:
+    '内置超级管理员角色受保护，不能修改或删除',
   [ErrorCode.PERMISSION_NOT_FOUND]: '权限点不存在',
   [ErrorCode.PERMISSION_CODE_TAKEN]: '权限码已存在',
   [ErrorCode.PERMISSION_CODE_REQUIRED]: '菜单与按钮类型必须设置权限码',

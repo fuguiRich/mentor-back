@@ -76,6 +76,8 @@ describe('用户 (e2e)', () => {
     roleA = await createRole('探针角色甲', 'probe_role_a');
     roleB = await createRole('探针角色乙', 'probe_role_b');
     roleC = await createRole('探针角色丙', 'probe_role_c');
+    // 内置超管角色：updateSuperAdmin / assignRoles 的角色同步要用
+    await createRole('超级管理员', 'super_admin', 1, 'all');
 
     // supertest 7 会在「没有在途请求」时自动 close 掉自动起的 server。
     // await 必须放在请求链**外**：写进 .send() 会让中间那次请求先 settle
@@ -848,6 +850,55 @@ describe('用户 (e2e)', () => {
       .expect(409);
     expect((self.body as ResponseEnvelope<null>).code).toBe(
       ErrorCode.USER_SUPER_ADMIN_PROTECTED,
+    );
+  });
+
+  it('25d. assignRoles 授予 / 摘除 super_admin 角色同步标志；非超管 403', async () => {
+    const target = await seedUser(prisma, {
+      username: 'super-role-target',
+      deptId: rootDeptId,
+    });
+    const superRole = await prisma.client.sysRole.findFirst({
+      where: { code: 'super_admin', deletedAt: null },
+    });
+    if (superRole === null) {
+      throw new Error('测试库没有 super_admin 角色');
+    }
+
+    const granted = await api
+      .put(`/users/${target.userId.toString()}/roles`)
+      .send({ roleIds: [superRole.id.toString()] })
+      .expect(200);
+    expect(
+      (granted.body as ResponseEnvelope<{ isSuperAdmin: boolean }>).data
+        .isSuperAdmin,
+    ).toBe(true);
+    expect(
+      (
+        await prisma.client.sysUser.findFirst({
+          where: { id: target.userId },
+        })
+      )?.isSuperAdmin,
+    ).toBe(true);
+
+    const revoked = await api
+      .put(`/users/${target.userId.toString()}/roles`)
+      .send({ roleIds: [] })
+      .expect(200);
+    expect(
+      (revoked.body as ResponseEnvelope<{ isSuperAdmin: boolean }>).data
+        .isSuperAdmin,
+    ).toBe(false);
+
+    const { token } = await seedOperator('role-super-setter', [
+      'user:assign-role',
+    ]);
+    const denied = await authedAgent(app, token)
+      .put(`/users/${target.userId.toString()}/roles`)
+      .send({ roleIds: [superRole.id.toString()] })
+      .expect(403);
+    expect((denied.body as ResponseEnvelope<null>).code).toBe(
+      ErrorCode.FORBIDDEN,
     );
   });
 
