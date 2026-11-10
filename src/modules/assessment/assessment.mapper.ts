@@ -8,6 +8,13 @@ import type {
   AssessmentUserRefDto,
 } from './dto/assessment-response.dto';
 
+interface FileRef {
+  id: bigint;
+  originName: string;
+  mimeType: string;
+  size: number;
+}
+
 /** 映射考核时需要的关联实体（导师 + 审核人姓名） */
 export interface AssessmentMapContext {
   mentor: {
@@ -32,6 +39,7 @@ export interface AppealMapContext {
     mentor: { person: { realName: string } };
   };
   userNames: ReadonlyMap<string, string>;
+  files: ReadonlyArray<FileRef>;
 }
 
 function userRef(
@@ -161,11 +169,19 @@ export function frozenWeights(
   };
 }
 
+/** JSON 列的兜底读：坏数据不该把接口打成 500 */
+function toStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
+}
+
 /** 申诉实体 → 响应 DTO（RES-04） */
 export function toAppealResponse(
   row: AssessmentAppeal,
   context: AppealMapContext,
 ): AppealResponseDto {
+  const fileIds = toStringArray(row.fileIds);
   return {
     id: row.id.toString(),
     assessmentId: row.assessmentId.toString(),
@@ -182,6 +198,13 @@ export function toAppealResponse(
     handledAt: row.handledAt === null ? null : row.handledAt.toISOString(),
     submittedBy: userRef(row.createdBy, context.userNames),
     handledBy: userRef(row.handledBy, context.userNames),
+    fileIds,
+    files: context.files.map((file) => ({
+      id: file.id.toString(),
+      originName: file.originName,
+      mimeType: file.mimeType,
+      size: file.size,
+    })),
     createdAt: row.createdAt.toISOString(),
   };
 }

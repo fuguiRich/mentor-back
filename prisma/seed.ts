@@ -218,7 +218,8 @@ const SEED_ROLE_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
     'reminder:send',
     'student-achievement:manage',
     'student-achievement:list',
-    // §4.4：下载 / 预览学生与导师上传的佐证材料
+    // §4.4：下载 / 预览学生与导师上传的佐证材料；登记学生成果需要上传佐证
+    'file:create',
     'file:list',
   ],
   sc_admin: [
@@ -261,7 +262,8 @@ const SEED_ROLE_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
     'work:progress',
     'reminder:send',
     'student-achievement:list',
-    // §4.4：下载 / 预览学生与导师上传的佐证材料
+    // §4.4：下载 / 预览学生与导师上传的佐证材料；登记学生成果需要上传佐证
+    'file:create',
     'file:list',
   ],
   student: [

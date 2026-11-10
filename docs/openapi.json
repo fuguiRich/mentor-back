@@ -9564,6 +9564,120 @@
         ]
       }
     },
+    "/assessments/{id}/appeals/{appealId}/files/{fileId}/preview": {
+      "get": {
+        "description": "可见性与考核详情一致；`fileId` 必须是该申诉的附件，否则 404 / 28101。",
+        "operationId": "AssessmentController_previewAppealFile",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "考核 ID",
+            "schema": {
+              "example": "1",
+              "type": "string"
+            }
+          },
+          {
+            "name": "appealId",
+            "required": true,
+            "in": "path",
+            "description": "申诉 ID",
+            "schema": {
+              "example": "2",
+              "type": "string"
+            }
+          },
+          {
+            "name": "fileId",
+            "required": true,
+            "in": "path",
+            "description": "文件 ID",
+            "schema": {
+              "example": "12",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "返回文件字节流（不是 JSON）"
+          },
+          "400": {
+            "description": "参数失败（10001）。管道校验失败时 data.fields 给出逐字段清单（schema 如右）；业务层参数失败时 data 为 null。详见全局说明",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "行内预览申诉佐证",
+        "tags": [
+          "考核"
+        ]
+      }
+    },
+    "/assessments/{id}/appeals/{appealId}/files/{fileId}/download": {
+      "get": {
+        "description": "可见性同预览；Content-Disposition: attachment。",
+        "operationId": "AssessmentController_downloadAppealFile",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "考核 ID",
+            "schema": {
+              "example": "1",
+              "type": "string"
+            }
+          },
+          {
+            "name": "appealId",
+            "required": true,
+            "in": "path",
+            "description": "申诉 ID",
+            "schema": {
+              "example": "2",
+              "type": "string"
+            }
+          },
+          {
+            "name": "fileId",
+            "required": true,
+            "in": "path",
+            "description": "文件 ID",
+            "schema": {
+              "example": "12",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "返回文件字节流（不是 JSON）"
+          },
+          "400": {
+            "description": "参数失败（10001）。管道校验失败时 data.fields 给出逐字段清单（schema 如右）；业务层参数失败时 data 为 null。详见全局说明",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "下载申诉佐证",
+        "tags": [
+          "考核"
+        ]
+      }
+    },
     "/stats/mentors": {
       "get": {
         "description": "统计项：入驻导师总数、校内 / 校外导师数、各指导方向分布、审核通过 / 未通过数、活跃 / 非活跃导师数。**二级学院只统计本院；双创学院可按学院 / 全校统计**。时间维度：`period`（学期 `YYYY-S`，或历史四位年份）或 `from` + `to`（`YYYY-MM-DD`，闭区间）**二选一**，都不传按当前学期；两者同时传或 `from`/`to` 只给一个 → **400 / 10001**。`deptId` 只有双创学院能传，学院管理员传了 → **403 / 10003**。`total` / `internal` / `external` / `active` / `inactive` 只算**生效档案**；`byStatus` 是全部 6 个状态的全量分布。`active` = 生效且周期内有 ≥1 条 `status = 6` 的预约（R68）。",
@@ -11040,6 +11154,7 @@
                 "Assessment",
                 "GuidanceRecord",
                 "Achievement",
+                "StudentAchievement",
                 "Other"
               ]
             }
@@ -11381,6 +11496,264 @@
           }
         },
         "summary": "取消归档（软删，双创学院管理员）",
+        "tags": [
+          "归档"
+        ]
+      }
+    },
+    "/archives/{id}/files/{fileId}/preview": {
+      "get": {
+        "description": "可见性与归档详情一致；`fileId` 必须是该归档的附件，否则 404 / 28101。返回字节流，不是 JSON。",
+        "operationId": "ArchiveController_previewFile",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "归档条目 ID",
+            "schema": {
+              "example": "1",
+              "type": "string"
+            }
+          },
+          {
+            "name": "fileId",
+            "required": true,
+            "in": "path",
+            "description": "文件 ID",
+            "schema": {
+              "example": "12",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "返回文件字节流（不是 JSON）"
+          },
+          "400": {
+            "description": "参数失败（10001）。管道校验失败时 data.fields 给出逐字段清单（schema 如右）；业务层参数失败时 data 为 null。详见全局说明",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "超出数据范围（403 / 10003）",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "example": {
+                    "code": 10003,
+                    "message": "无权限",
+                    "data": null
+                  }
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "example": {
+                    "code": 10003,
+                    "message": "无权限",
+                    "data": null
+                  }
+                }
+              },
+              "image/gif": {
+                "schema": {
+                  "example": {
+                    "code": 10003,
+                    "message": "无权限",
+                    "data": null
+                  }
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "example": {
+                    "code": 10003,
+                    "message": "无权限",
+                    "data": null
+                  }
+                }
+              },
+              "image/bmp": {
+                "schema": {
+                  "example": {
+                    "code": 10003,
+                    "message": "无权限",
+                    "data": null
+                  }
+                }
+              },
+              "application/pdf": {
+                "schema": {
+                  "example": {
+                    "code": 10003,
+                    "message": "无权限",
+                    "data": null
+                  }
+                }
+              },
+              "application/octet-stream": {
+                "schema": {
+                  "example": {
+                    "code": 10003,
+                    "message": "无权限",
+                    "data": null
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "归档 / 附件不存在（404 / 37001 或 28101）",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "example": {
+                    "code": 28101,
+                    "message": "文件不存在",
+                    "data": null
+                  }
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "example": {
+                    "code": 28101,
+                    "message": "文件不存在",
+                    "data": null
+                  }
+                }
+              },
+              "image/gif": {
+                "schema": {
+                  "example": {
+                    "code": 28101,
+                    "message": "文件不存在",
+                    "data": null
+                  }
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "example": {
+                    "code": 28101,
+                    "message": "文件不存在",
+                    "data": null
+                  }
+                }
+              },
+              "image/bmp": {
+                "schema": {
+                  "example": {
+                    "code": 28101,
+                    "message": "文件不存在",
+                    "data": null
+                  }
+                }
+              },
+              "application/pdf": {
+                "schema": {
+                  "example": {
+                    "code": 28101,
+                    "message": "文件不存在",
+                    "data": null
+                  }
+                }
+              },
+              "application/octet-stream": {
+                "schema": {
+                  "example": {
+                    "code": 28101,
+                    "message": "文件不存在",
+                    "data": null
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "行内预览归档附件",
+        "tags": [
+          "归档"
+        ]
+      }
+    },
+    "/archives/{id}/files/{fileId}/download": {
+      "get": {
+        "description": "可见性同预览；Content-Disposition: attachment。",
+        "operationId": "ArchiveController_downloadFile",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "归档条目 ID",
+            "schema": {
+              "example": "1",
+              "type": "string"
+            }
+          },
+          {
+            "name": "fileId",
+            "required": true,
+            "in": "path",
+            "description": "文件 ID",
+            "schema": {
+              "example": "12",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "返回文件字节流（不是 JSON）"
+          },
+          "400": {
+            "description": "参数失败（10001）。管道校验失败时 data.fields 给出逐字段清单（schema 如右）；业务层参数失败时 data 为 null。详见全局说明",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "超出数据范围（403 / 10003）",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "example": {
+                    "code": 10003,
+                    "message": "无权限",
+                    "data": null
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "归档 / 附件不存在（404 / 37001 或 28101）",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "example": {
+                    "code": 28101,
+                    "message": "文件不存在",
+                    "data": null
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "下载归档附件",
         "tags": [
           "归档"
         ]
@@ -12036,6 +12409,94 @@
           }
         },
         "summary": "检索学生成果（§5.4）",
+        "tags": [
+          "学生成果"
+        ]
+      }
+    },
+    "/student-achievements/students": {
+      "get": {
+        "description": "按姓名 / 学号搜索 `SyncPerson.personType = student`，可按学院过滤。数据范围：双创学院看全校；学院管理员只看本院学生；导师 / 学生不返回目录。用于学生成果登记与筛选的下拉数据源。",
+        "operationId": "StudentAchievementController_listStudents",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "页码，从 1 开始；不传时为 1",
+            "schema": {
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "每页条数，最大 100；不传时为 20",
+            "schema": {
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "keyword",
+            "required": false,
+            "in": "query",
+            "description": "按姓名 / 学号模糊搜索",
+            "schema": {
+              "example": "陈",
+              "type": "string"
+            }
+          },
+          {
+            "name": "deptId",
+            "required": false,
+            "in": "query",
+            "description": "限定学院（SysDept.id）",
+            "schema": {
+              "example": "2",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "学生选项（200）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentOptionListResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数失败（10001）。管道校验失败时 data.fields 给出逐字段清单（schema 如右）；业务层参数失败时 data 为 null。详见全局说明",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "指定了数据范围外的学院（403 / 10003）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "example": {
+                    "code": 10003,
+                    "message": "无权限",
+                    "data": null
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "学生下拉目录",
         "tags": [
           "学生成果"
         ]
@@ -17867,6 +18328,17 @@
             "type": "string",
             "description": "申诉说明，1-1000 字",
             "example": "本年度指导 15 次、成果 3 项，初评材料遗漏了省级奖项，请复核。"
+          },
+          "fileIds": {
+            "description": "佐证附件（SysFile.id 数组，最多 10 个）；先走 `POST /files` 上传",
+            "example": [
+              "12",
+              "13"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -17908,6 +18380,37 @@
           "mentorProfileId",
           "mentorName",
           "status"
+        ]
+      },
+      "AppealFileRefDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "文件 ID",
+            "example": "12"
+          },
+          "originName": {
+            "type": "string",
+            "description": "原始文件名",
+            "example": "获奖证书.pdf"
+          },
+          "mimeType": {
+            "type": "string",
+            "description": "MIME 类型",
+            "example": "application/pdf"
+          },
+          "size": {
+            "type": "number",
+            "description": "文件大小（字节）",
+            "example": 102400
+          }
+        },
+        "required": [
+          "id",
+          "originName",
+          "mimeType",
+          "size"
         ]
       },
       "AppealResponseDto": {
@@ -17973,6 +18476,23 @@
               }
             ]
           },
+          "fileIds": {
+            "description": "佐证附件 ID 数组；没有附件时为 []",
+            "example": [
+              "12"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "files": {
+            "description": "佐证附件元数据；没有附件时为 []",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppealFileRefDto"
+            }
+          },
           "createdAt": {
             "type": "string",
             "description": "提交时间（ISO 8601）",
@@ -17989,6 +18509,8 @@
           "handledAt",
           "submittedBy",
           "handledBy",
+          "fileIds",
+          "files",
           "createdAt"
         ]
       },
@@ -18973,6 +19495,7 @@
               "Assessment",
               "GuidanceRecord",
               "Achievement",
+              "StudentAchievement",
               "Other"
             ],
             "example": "Achievement"
@@ -19011,6 +19534,17 @@
             "type": "string",
             "description": "归档摘要，≤500 字",
             "example": "按 §4.7 手工归档的非核心材料"
+          },
+          "fileIds": {
+            "description": "归档附件（SysFile.id 数组，最多 10 个）；先走 `POST /files` 上传",
+            "example": [
+              "12",
+              "13"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -19018,6 +19552,37 @@
           "targetId",
           "title",
           "category"
+        ]
+      },
+      "ArchiveFileRefDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "文件 ID",
+            "example": "12"
+          },
+          "originName": {
+            "type": "string",
+            "description": "原始文件名",
+            "example": "获奖证书.pdf"
+          },
+          "mimeType": {
+            "type": "string",
+            "description": "MIME 类型",
+            "example": "application/pdf"
+          },
+          "size": {
+            "type": "number",
+            "description": "文件大小（字节）",
+            "example": 102400
+          }
+        },
+        "required": [
+          "id",
+          "originName",
+          "mimeType",
+          "size"
         ]
       },
       "ArchiveResponseDto": {
@@ -19086,6 +19651,23 @@
             "nullable": true,
             "example": "手工归档的非核心材料"
           },
+          "fileIds": {
+            "description": "归档附件 ID 数组；没有附件时为 []",
+            "example": [
+              "12"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "files": {
+            "description": "归档附件元数据；没有附件时为 []",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ArchiveFileRefDto"
+            }
+          },
           "createdAt": {
             "type": "string",
             "description": "创建时间（ISO 8601）",
@@ -19104,6 +19686,8 @@
           "archivedAt",
           "retentionUntil",
           "summary",
+          "fileIds",
+          "files",
           "createdAt"
         ]
       },
@@ -19158,6 +19742,17 @@
             "description": "保留截止日，YYYY-MM-DD；传 null 取消自动清理",
             "nullable": true,
             "example": "2031-11-02"
+          },
+          "fileIds": {
+            "description": "归档附件（SysFile.id 数组，最多 10 个）；传 [] = 清空",
+            "example": [
+              "12",
+              "13"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -19716,6 +20311,91 @@
           "proofFileId",
           "linkedAt",
           "createdAt"
+        ]
+      },
+      "StudentOptionDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "学生人员 ID（SyncPerson.id）",
+            "example": "5"
+          },
+          "login": {
+            "type": "string",
+            "description": "学号 / 登录名",
+            "example": "20230001"
+          },
+          "realName": {
+            "type": "string",
+            "description": "姓名",
+            "example": "陈一鸣"
+          },
+          "deptId": {
+            "type": "string",
+            "description": "所属学院 ID；没有组织投影时为 null",
+            "nullable": true,
+            "example": "2"
+          },
+          "deptName": {
+            "type": "string",
+            "description": "所属学院名；没有组织投影时为 null",
+            "nullable": true,
+            "example": "计算机学院"
+          },
+          "major": {
+            "type": "string",
+            "description": "专业；未同步时为 null",
+            "nullable": true,
+            "example": "软件工程"
+          },
+          "className": {
+            "type": "string",
+            "description": "行政班级；未同步时为 null",
+            "nullable": true,
+            "example": "软工 2023-1 班"
+          }
+        },
+        "required": [
+          "id",
+          "login",
+          "realName",
+          "deptId",
+          "deptName",
+          "major",
+          "className"
+        ]
+      },
+      "StudentOptionListResponseDto": {
+        "type": "object",
+        "properties": {
+          "list": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StudentOptionDto"
+            }
+          },
+          "total": {
+            "type": "number",
+            "description": "总条数",
+            "example": 120
+          },
+          "page": {
+            "type": "number",
+            "description": "当前页码",
+            "example": 1
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "每页条数",
+            "example": 20
+          }
+        },
+        "required": [
+          "list",
+          "total",
+          "page",
+          "pageSize"
         ]
       },
       "StudentAchievementListResponseDto": {

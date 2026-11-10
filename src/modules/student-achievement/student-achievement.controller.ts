@@ -38,6 +38,10 @@ import {
   StudentAchievementListResponseDto,
   StudentAchievementResponseDto,
 } from './dto/student-achievement-response.dto';
+import {
+  QueryStudentOptionDto,
+  StudentOptionListResponseDto,
+} from './dto/student-option.dto';
 import { StudentAchievementService } from './student-achievement.service';
 
 /**
@@ -84,6 +88,32 @@ export class StudentAchievementController {
     @CurrentUser() caller: RequestUser,
   ): Promise<StudentAchievementResponseDto> {
     return this.studentAchievementService.create(dto, caller);
+  }
+
+  @Get('students')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermission('student-achievement:list')
+  @DataScope('all')
+  @ApiOperation({
+    summary: '学生下拉目录',
+    description:
+      '按姓名 / 学号搜索 `SyncPerson.personType = student`，可按学院过滤。' +
+      '数据范围：双创学院看全校；学院管理员只看本院学生；导师 / 学生不返回目录。' +
+      '用于学生成果登记与筛选的下拉数据源。',
+  })
+  @ApiOkResponse({
+    type: StudentOptionListResponseDto,
+    description: '学生选项（200）',
+  })
+  @ApiForbiddenResponse({
+    description: '指定了数据范围外的学院（403 / 10003）',
+    schema: { example: errExample(ErrorCode.FORBIDDEN, '无权限') },
+  })
+  async listStudents(
+    @Query() query: QueryStudentOptionDto,
+    @CurrentUser() caller: RequestUser,
+  ): Promise<StudentOptionListResponseDto> {
+    return this.studentAchievementService.listStudentOptions(query, caller);
   }
 
   @Get()

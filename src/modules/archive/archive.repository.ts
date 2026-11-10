@@ -19,6 +19,7 @@ export interface ArchiveWrite {
   archivedAt: Date;
   retentionUntil: Date | null;
   summary: string | null;
+  fileIds: string[];
 }
 
 /** 检索条件（已由 Service 翻译成 where 片段，仓储只负责拼） */
@@ -38,6 +39,7 @@ export interface ArchivePatch {
   title?: string;
   summary?: string;
   retentionUntil?: Date | null;
+  fileIds?: string[];
 }
 
 /**
@@ -71,6 +73,29 @@ export class ArchiveRepository {
 
   findById(id: bigint): Promise<ArchiveItem | null> {
     return this.prisma.client.archiveItem.findFirst({ where: { id } });
+  }
+
+  /** 附件元数据：只回未软删的文件 */
+  async findFilesByIds(ids: readonly bigint[]): Promise<
+    Array<{
+      id: bigint;
+      originName: string;
+      mimeType: string;
+      size: number;
+    }>
+  > {
+    if (ids.length === 0) {
+      return [];
+    }
+    return this.prisma.client.sysFile.findMany({
+      where: { id: { in: [...ids] } },
+      select: {
+        id: true,
+        originName: true,
+        mimeType: true,
+        size: true,
+      },
+    });
   }
 
   findPage(

@@ -870,6 +870,8 @@ model AssessmentAppeal {
   status       Int      @default(0) @db.TinyInt
   /// 处理意见，1-1000 字（处理时必填）
   reply        String?  @db.VarChar(1000)
+  /// 申诉佐证附件（SysFile.id 的 JSON 数组）
+  fileIds      Json?    @map("file_ids") @db.Json
   handledAt    DateTime? @map("handled_at") @db.DateTime(3)
   handledBy    BigInt?   @map("handled_by") @db.UnsignedBigInt
 
@@ -948,6 +950,9 @@ model ArchiveItem {
   retentionUntil DateTime? @map("retention_until") @db.Date
   /// 归档摘要（≤500），可空
   summary  String? @db.VarChar(500)
+  /// 归档附件（SysFile.id 的 JSON 数组）。裸列无外键：文件被多处引用，
+  /// 删归档不连带删文件；附件本体走文件模块的 serve
+  fileIds  Json?   @map("file_ids") @db.Json
 
   createdAt  DateTime @default(now()) @map("created_at") @db.DateTime(3)
   updatedAt  DateTime @default(now()) @map("updated_at") @db.DateTime(3)

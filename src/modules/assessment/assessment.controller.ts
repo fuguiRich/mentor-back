@@ -8,6 +8,7 @@ import {
   Post,
   Put,
   Query,
+  StreamableFile,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -18,10 +19,12 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiProduces,
   ApiTags,
 } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { DataScope } from '../../common/decorators/data-scope.decorator';
+import { NoEnvelope } from '../../common/decorators/no-envelope.decorator';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { ErrorCode } from '../../common/constants/error-code';
 import { errExample } from '../../common/dto/err-example';
@@ -29,6 +32,7 @@ import type { RequestUser } from '../../common/context/request-context';
 import { AssessmentService } from './assessment.service';
 import { AssessmentParamDto } from './dto/assessment-param.dto';
 import { AppealParamDto } from './dto/appeal-param.dto';
+import { AppealFileParamDto } from './dto/appeal-file-param.dto';
 import {
   AppealListResponseDto,
   AppealResponseDto,
@@ -465,6 +469,59 @@ export class AssessmentController {
       BigInt(params.id),
       BigInt(params.appealId),
       dto,
+      caller,
+    );
+  }
+
+  @Get(':id/appeals/:appealId/files/:fileId/preview')
+  @NoEnvelope()
+  @RequirePermission('assessment:list')
+  @DataScope('all')
+  @ApiOperation({
+    summary: '行内预览申诉佐证',
+    description:
+      '可见性与考核详情一致；`fileId` 必须是该申诉的附件，否则 404 / 28101。',
+  })
+  @ApiProduces(
+    'image/png',
+    'image/jpeg',
+    'image/gif',
+    'image/webp',
+    'image/bmp',
+    'application/pdf',
+    'application/octet-stream',
+  )
+  @ApiOkResponse({ description: '返回文件字节流（不是 JSON）' })
+  async previewAppealFile(
+    @Param() params: AppealFileParamDto,
+    @CurrentUser() caller: RequestUser,
+  ): Promise<StreamableFile> {
+    return this.assessmentService.previewAppealFile(
+      BigInt(params.id),
+      BigInt(params.appealId),
+      BigInt(params.fileId),
+      caller,
+    );
+  }
+
+  @Get(':id/appeals/:appealId/files/:fileId/download')
+  @NoEnvelope()
+  @RequirePermission('assessment:list')
+  @DataScope('all')
+  @ApiOperation({
+    summary: '下载申诉佐证',
+    description: '可见性同预览；Content-Disposition: attachment。',
+  })
+  @ApiProduces('application/octet-stream')
+  @ApiOkResponse({ description: '返回文件字节流（不是 JSON）' })
+  async downloadAppealFile(
+    @Param() params: AppealFileParamDto,
+    @CurrentUser() caller: RequestUser,
+  ): Promise<StreamableFile> {
+    return this.assessmentService.downloadAppealFile(
+      BigInt(params.id),
+      BigInt(params.appealId),
+      BigInt(params.fileId),
       caller,
     );
   }

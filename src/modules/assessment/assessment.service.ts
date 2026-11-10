@@ -1,5 +1,5 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
-import type { Assessment, Prisma } from '@prisma/client';
+import { HttpStatus, Injectable, type StreamableFile } from '@nestjs/common';
+import type { Assessment, AssessmentAppeal, Prisma } from '@prisma/client';
 import { ErrorCode } from '../../common/constants/error-code';
 import type { RequestUser } from '../../common/context/request-context';
 import { isDeptInFilter } from '../../common/constants/data-scope';
@@ -7,6 +7,7 @@ import { currentDataScopeCeiling } from '../../common/context/request-context';
 import { BusinessException } from '../../common/errors/business.exception';
 import { ConfigService as SysConfigService } from '../config/config.service';
 import { DataScopeService } from '../data-scope/data-scope.service';
+import { FileService } from '../file/file.service';
 import { UserService } from '../user/user.service';
 import {
   ACHIEVEMENT_TARGET_CONFIG_CODE,
@@ -85,6 +86,7 @@ export class AssessmentService {
     private readonly sysConfig: SysConfigService,
     private readonly dataScope: DataScopeService,
     private readonly users: UserService,
+    private readonly fileService: FileService,
   ) {}
 
   /**
@@ -473,9 +475,16 @@ export class AssessmentService {
       throw this.appealNotAllowed();
     }
 
+    const fileIds = [...new Set(dto.fileIds ?? [])];
+    for (const fileId of fileIds) {
+      // 只允许引用本人上传的佐证，防止拿别人的 fileId 拼申诉
+      await this.fileService.assertUploadedBy(fileId, caller.userId);
+    }
+
     const created = await this.repository.createAppealAndMarkAppealing(
       id,
       dto.reason,
+      fileIds,
     );
     if (created === null) {
       throw this.transitionInvalid();
@@ -486,6 +495,7 @@ export class AssessmentService {
         { ...assessment, status: ASSESSMENT_STATUS.APPEALING },
         ASSESSMENT_STATUS.APPEALING,
         [created.createdBy, created.handledBy],
+        fileIds,
       ),
     );
   }
@@ -515,6 +525,14 @@ export class AssessmentService {
     const userNames = await this.repository.findUserNamesByIds([
       ...new Set(actorIds),
     ]);
+    const fileRows = await this.repository.findFilesByIds(
+      [...new Set(rows.flatMap((row) => this.appealFileIds(row)))].map((id) =>
+        BigInt(id),
+      ),
+    );
+    const fileById = new Map(
+      fileRows.map((file) => [file.id.toString(), file]),
+    );
     return {
       list: rows.map((row) =>
         toAppealResponse(row, {
@@ -526,6 +544,18 @@ export class AssessmentService {
             mentor: assessment.mentor,
           },
           userNames,
+          files: this.appealFileIds(row)
+            .map((fileId) => fileById.get(fileId))
+            .filter(
+              (
+                file,
+              ): file is {
+                id: bigint;
+                originName: string;
+                mimeType: string;
+                size: number;
+              } => file !== undefined,
+            ),
         }),
       ),
       total,
@@ -584,8 +614,59 @@ export class AssessmentService {
         { ...assessment, status: nextStatus },
         nextStatus,
         [updated.createdBy, updated.handledBy],
+        this.appealFileIds(updated),
       ),
     );
+  }
+
+  /** `GET /assessments/:id/appeals/:appealId/files/:fileId/preview` */
+  async previewAppealFile(
+    id: bigint,
+    appealId: bigint,
+    fileId: bigint,
+    caller: RequestUser,
+  ): Promise<StreamableFile> {
+    return this.serveAppealFile(id, appealId, fileId, caller, 'inline');
+  }
+
+  /** `GET /assessments/:id/appeals/:appealId/files/:fileId/download` */
+  async downloadAppealFile(
+    id: bigint,
+    appealId: bigint,
+    fileId: bigint,
+    caller: RequestUser,
+  ): Promise<StreamableFile> {
+    return this.serveAppealFile(
+      id,
+      appealId,
+      fileId,
+      caller,
+      'attachment',
+      'application/octet-stream',
+    );
+  }
+
+  private async serveAppealFile(
+    id: bigint,
+    appealId: bigint,
+    fileId: bigint,
+    caller: RequestUser,
+    disposition: 'inline' | 'attachment',
+    type?: string,
+  ): Promise<StreamableFile> {
+    const assessment = await this.repository.findByIdWithMentor(id);
+    if (assessment === null) {
+      throw this.notFound();
+    }
+    await this.assertVisible(assessment, caller);
+    const appeal = await this.repository.findAppealById(id, appealId);
+    if (appeal === null) {
+      throw this.appealNotFound();
+    }
+    if (!this.appealFileIds(appeal).includes(fileId.toString())) {
+      throw this.fileNotFound();
+    }
+    return this.fileService.serve(fileId, disposition, type);
   }
 
   /** `status = 0` 用当前配置的权重；已提交的用冻结在行上的那一组 */
@@ -623,8 +704,13 @@ export class AssessmentService {
     assessment: AssessmentWithMentor,
     status: number,
     userIds: ReadonlyArray<bigint | null>,
+    fileIds: readonly string[] = [],
   ): Promise<AppealMapContext> {
     const ids = [...new Set(userIds.filter((id): id is bigint => id !== null))];
+    const files = await this.repository.findFilesByIds(
+      fileIds.map((id) => BigInt(id)),
+    );
+    const byId = new Map(files.map((file) => [file.id.toString(), file]));
     return {
       assessment: {
         id: assessment.id,
@@ -634,7 +720,25 @@ export class AssessmentService {
         mentor: assessment.mentor,
       },
       userNames: await this.repository.findUserNamesByIds(ids),
+      files: fileIds
+        .map((id) => byId.get(id))
+        .filter(
+          (
+            file,
+          ): file is {
+            id: bigint;
+            originName: string;
+            mimeType: string;
+            size: number;
+          } => file !== undefined,
+        ),
     };
+  }
+
+  private appealFileIds(row: AssessmentAppeal): string[] {
+    return Array.isArray(row.fileIds)
+      ? row.fileIds.filter((item): item is string => typeof item === 'string')
+      : [];
   }
 
   /** 列表的 where：先按查询参数，再按调用者的有效数据范围收窄 */
@@ -858,6 +962,14 @@ export class AssessmentService {
       ErrorCode.FORBIDDEN,
       '无权限',
       HttpStatus.FORBIDDEN,
+    );
+  }
+
+  private fileNotFound(): BusinessException {
+    return new BusinessException(
+      ErrorCode.FILE_NOT_FOUND,
+      '文件不存在',
+      HttpStatus.NOT_FOUND,
     );
   }
 }

@@ -1,5 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  ArrayMaxSize,
+  IsArray,
   IsIn,
   IsOptional,
   IsString,
@@ -7,6 +9,7 @@ import {
   Matches,
   MaxLength,
 } from 'class-validator';
+import { IsBigIntId } from '../../../common/decorators/is-bigint-id.decorator';
 import {
   ARCHIVE_TARGET_TYPES,
   MANUAL_ARCHIVE_CATEGORIES,
@@ -84,4 +87,16 @@ export class CreateArchiveDto {
   @IsString({ message: 'summary 必须是字符串' })
   @MaxLength(500, { message: 'summary 长度不能超过 500 个字符' })
   summary?: string;
+
+  @ApiPropertyOptional({
+    description:
+      '归档附件（SysFile.id 数组，最多 10 个）；先走 `POST /files` 上传',
+    type: [String],
+    example: ['12', '13'],
+  })
+  @IsOptional()
+  @IsArray({ message: 'fileIds 必须是数组' })
+  @ArrayMaxSize(10, { message: '归档附件最多 10 个' })
+  @IsBigIntId({ each: true, message: 'fileIds 必须是数字 ID 数组' })
+  fileIds?: string[];
 }

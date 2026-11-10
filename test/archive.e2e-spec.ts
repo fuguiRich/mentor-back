@@ -21,6 +21,7 @@ import {
 } from './e2e-helpers';
 
 const SYNCED_AT = new Date('2026-10-27T00:00:00.000Z');
+const PDF = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34]);
 const CURRENT_YEAR = String(new Date().getUTCFullYear());
 const TIME_ZONE = process.env.APP_TIMEZONE || 'Asia/Shanghai';
 const DEFAULT_RETENTION_DAYS = 1825;
@@ -106,6 +107,7 @@ describe('归档（P4 Task 52 / §4.7）(e2e)', () => {
     const scRole = await createRole('归档双创学院', 'arc_sc', 'all', [
       'archive:list',
       'archive:manage',
+      'file:create',
       'mentor-application:review-sc',
       'assessment:finalize',
     ]);
@@ -448,6 +450,58 @@ describe('归档（P4 Task 52 / §4.7）(e2e)', () => {
     expect(data.archivedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
+  it('判据 4b：归档附件可上传 / 预览 / 下载 / 清空；StudentAchievement 可作为目标类型', async () => {
+    const upload = await api('arc-sc')
+      .post('/files')
+      .attach('files', PDF, {
+        filename: '归档佐证.pdf',
+        contentType: 'application/pdf',
+      })
+      .expect(201);
+    const file = (upload.body as ResponseEnvelope<{ id: string }[]>).data[0];
+
+    const created = await api('arc-sc')
+      .post('/archives')
+      .send({
+        targetType: 'StudentAchievement',
+        targetId: 'attach-1',
+        title: '带附件的学生成果归档',
+        category: 'other',
+        fileIds: [file.id],
+      })
+      .expect(201);
+    const data = (created.body as ResponseEnvelope<ArchiveResponseDto>).data;
+    expect(data.fileIds).toEqual([file.id]);
+    expect(data.files).toEqual([
+      {
+        id: file.id,
+        originName: '归档佐证.pdf',
+        mimeType: 'application/pdf',
+        size: PDF.length,
+      },
+    ]);
+
+    const preview = await api('arc-sc')
+      .get(`/archives/${data.id}/files/${file.id}/preview`)
+      .expect(200);
+    expect(preview.headers['content-disposition']).toContain('inline');
+    expect(Buffer.compare(preview.body as Buffer, PDF)).toBe(0);
+
+    const download = await api('arc-sc')
+      .get(`/archives/${data.id}/files/${file.id}/download`)
+      .expect(200);
+    expect(download.headers['content-disposition']).toContain('attachment');
+    expect(Buffer.compare(download.body as Buffer, PDF)).toBe(0);
+
+    const cleared = await api('arc-sc')
+      .patch(`/archives/${data.id}`)
+      .send({ fileIds: [] })
+      .expect(200);
+    expect(
+      (cleared.body as ResponseEnvelope<ArchiveResponseDto>).data.fileIds,
+    ).toEqual([]);
+  });
+
   it('判据 5：手工归档不允许调用方设置 core → 400 / 10001', async () => {
     const response = await api('arc-sc')
       .post('/archives')
@@ -522,8 +576,8 @@ describe('归档（P4 Task 52 / §4.7）(e2e)', () => {
   it('判据 9：双创学院检索全量，按 mentorId / category / targetType 过滤', async () => {
     const all = await api('arc-sc').get('/archives').expect(200);
     const allData = (all.body as ResponseEnvelope<ArchiveListResponseDto>).data;
-    // 2 条自动（申请 A/B）+ 1 条考核自动 + 2 条手工
-    expect(allData.total).toBe(5);
+    // 2 条自动（申请 A/B）+ 1 条考核自动 + 2 条手工 + 1 条附件用例
+    expect(allData.total).toBe(6);
 
     const byMentor = await api('arc-sc')
       .get('/archives')
@@ -561,7 +615,7 @@ describe('归档（P4 Task 52 / §4.7）(e2e)', () => {
       .expect(200);
     expect(
       (hit.body as ResponseEnvelope<ArchiveListResponseDto>).data.total,
-    ).toBe(5);
+    ).toBe(6);
 
     const miss = await api('arc-sc')
       .get('/archives')

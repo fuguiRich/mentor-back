@@ -41,6 +41,16 @@ export type StudentWithDept = SyncPerson & {
   orgUnit: { deptId: bigint | null } | null;
 };
 
+/** 学生目录行（下拉选项） */
+export interface StudentOptionRow {
+  id: bigint;
+  login: string;
+  realName: string;
+  major: string | null;
+  className: string | null;
+  orgUnit: { deptId: bigint | null; name: string } | null;
+}
+
 /**
  * 学生成果的数据访问（P5 Task 59）。
  *
@@ -56,6 +66,51 @@ export class StudentAchievementRepository {
       where: { id },
       include: { orgUnit: { select: { deptId: true } } },
     });
+  }
+
+  /** 学生目录：按姓名 / 学号搜索，可选部门过滤（数据范围已由 Service 转成 deptIds） */
+  findStudents(
+    filter: {
+      keyword?: string;
+      deptId?: bigint;
+      deptIds?: readonly bigint[];
+    },
+    skip: number,
+    take: number,
+  ): Promise<[StudentOptionRow[], number]> {
+    const where: Prisma.SyncPersonWhereInput = {
+      personType: 'student',
+      ...(filter.deptId === undefined
+        ? filter.deptIds === undefined
+          ? {}
+          : { orgUnit: { deptId: { in: [...filter.deptIds] } } }
+        : { orgUnit: { deptId: filter.deptId } }),
+      ...(filter.keyword === undefined
+        ? {}
+        : {
+            OR: [
+              { realName: { contains: filter.keyword } },
+              { login: { contains: filter.keyword } },
+            ],
+          }),
+    };
+    return Promise.all([
+      this.prisma.client.syncPerson.findMany({
+        where,
+        select: {
+          id: true,
+          login: true,
+          realName: true,
+          major: true,
+          className: true,
+          orgUnit: { select: { deptId: true, name: true } },
+        },
+        orderBy: [{ login: 'asc' }, { id: 'asc' }],
+        skip,
+        take,
+      }),
+      this.prisma.client.syncPerson.count({ where }),
+    ]);
   }
 
   /** 可关联的导师：必须已生效 */

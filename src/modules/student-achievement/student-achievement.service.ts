@@ -28,6 +28,10 @@ import type {
   StudentAchievementListResponseDto,
   StudentAchievementResponseDto,
 } from './dto/student-achievement-response.dto';
+import type {
+  QueryStudentOptionDto,
+  StudentOptionListResponseDto,
+} from './dto/student-option.dto';
 import { toStudentAchievementResponse } from './student-achievement.mapper';
 import {
   StudentAchievementRepository,
@@ -144,6 +148,61 @@ export class StudentAchievementService {
     await this.assertDeptVisible(row.deptId, caller);
     await this.repository.softDeleteWithLinked(row.id);
     return { id: row.id.toString() };
+  }
+
+  /** `GET /student-achievements/students` —— 学生下拉目录 */
+  async listStudentOptions(
+    query: QueryStudentOptionDto,
+    caller: RequestUser,
+  ): Promise<StudentOptionListResponseDto> {
+    const scope = await this.resolveScope(caller);
+    if (scope.kind === 'self') {
+      return {
+        list: [],
+        total: 0,
+        page: query.page,
+        pageSize: query.pageSize,
+      };
+    }
+
+    const deptId =
+      query.deptId === undefined ? undefined : BigInt(query.deptId);
+    if (
+      deptId !== undefined &&
+      scope.kind === 'depts' &&
+      !isDeptInFilter(scope, deptId)
+    ) {
+      throw this.forbidden();
+    }
+
+    const [rows, total] = await this.repository.findStudents(
+      {
+        ...(query.keyword === undefined ? {} : { keyword: query.keyword }),
+        ...(deptId === undefined ? {} : { deptId }),
+        ...(scope.kind === 'depts' && deptId === undefined
+          ? { deptIds: scope.deptIds }
+          : {}),
+      },
+      (query.page - 1) * query.pageSize,
+      query.pageSize,
+    );
+    return {
+      list: rows.map((row) => ({
+        id: row.id.toString(),
+        login: row.login,
+        realName: row.realName,
+        deptId:
+          row.orgUnit?.deptId === null || row.orgUnit?.deptId === undefined
+            ? null
+            : row.orgUnit.deptId.toString(),
+        deptName: row.orgUnit?.name ?? null,
+        major: row.major,
+        className: row.className,
+      })),
+      total,
+      page: query.page,
+      pageSize: query.pageSize,
+    };
   }
 
   /** `GET /student-achievements` */

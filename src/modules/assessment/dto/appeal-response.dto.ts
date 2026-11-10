@@ -26,6 +26,21 @@ export class AppealAssessmentRefDto {
   status!: number;
 }
 
+/** 申诉附件元数据（文件本体走 preview / download 字节流） */
+export class AppealFileRefDto {
+  @ApiProperty({ description: '文件 ID', example: '12' })
+  id!: string;
+
+  @ApiProperty({ description: '原始文件名', example: '获奖证书.pdf' })
+  originName!: string;
+
+  @ApiProperty({ description: 'MIME 类型', example: 'application/pdf' })
+  mimeType!: string;
+
+  @ApiProperty({ description: '文件大小（字节）', example: 102400 })
+  size!: number;
+}
+
 /**
  * 一条考核申诉的响应形状（RES-03 / RES-04）。
  *
@@ -88,6 +103,19 @@ export class AppealResponseDto {
     nullable: true,
   })
   handledBy!: AssessmentUserRefDto | null;
+
+  @ApiProperty({
+    description: '佐证附件 ID 数组；没有附件时为 []',
+    type: [String],
+    example: ['12'],
+  })
+  fileIds!: string[];
+
+  @ApiProperty({
+    description: '佐证附件元数据；没有附件时为 []',
+    type: [AppealFileRefDto],
+  })
+  files!: AppealFileRefDto[];
 
   @ApiProperty({
     description: '提交时间（ISO 8601）',

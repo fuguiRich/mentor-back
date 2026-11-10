@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { SysConfigModule } from '../config/config.module';
 import { DataScopeModule } from '../data-scope/data-scope.module';
+import { FileModule } from '../file/file.module';
 import { UserModule } from '../user/user.module';
 import { ArchiveController } from './archive.controller';
 import { ArchivePurgeScheduler } from './archive-purge.scheduler';
@@ -14,7 +15,7 @@ import { ArchiveService } from './archive.service';
  * 与审核同一事务完成（R66），本模块不反向依赖它们。
  */
 @Module({
-  imports: [UserModule, DataScopeModule, SysConfigModule],
+  imports: [UserModule, DataScopeModule, SysConfigModule, FileModule],
   controllers: [ArchiveController],
   providers: [ArchiveService, ArchiveRepository, ArchivePurgeScheduler],
 })

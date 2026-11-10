@@ -13,6 +13,7 @@ import type {
   StudentAchievementListResponseDto,
   StudentAchievementResponseDto,
 } from '../src/modules/student-achievement/dto/student-achievement-response.dto';
+import type { StudentOptionListResponseDto } from '../src/modules/student-achievement/dto/student-option.dto';
 import {
   authedAgent,
   clearBusinessTables,
@@ -562,6 +563,38 @@ describe('学生成果关联（P5 Task 59 / §5.4）(e2e)', () => {
     await api('sa-mentor-a')
       .get(`/student-achievements/${id}/proof/preview`)
       .expect(403);
+  });
+
+  it('判据 14：学生下拉目录——学院管理员可按姓名检索本院学生；跨院 403；学生为空', async () => {
+    const response = await api('sa-college-a')
+      .get('/student-achievements/students')
+      .query({ keyword: 'sa-student-a' })
+      .expect(200);
+    const data = (
+      response.body as ResponseEnvelope<StudentOptionListResponseDto>
+    ).data;
+    expect(data.total).toBe(1);
+    expect(data.list[0]).toMatchObject({
+      id: personOf('sa-student-a').toString(),
+      login: 'sa-student-a',
+      realName: 'sa-student-a',
+      deptId: dept('A').toString(),
+    });
+
+    const crossDept = await api('sa-college-a')
+      .get('/student-achievements/students')
+      .query({ deptId: dept('B').toString() })
+      .expect(403);
+    expect((crossDept.body as ResponseEnvelope<null>).code).toBe(
+      ErrorCode.FORBIDDEN,
+    );
+
+    const self = await api('sa-student-a')
+      .get('/student-achievements/students')
+      .expect(200);
+    expect(
+      (self.body as ResponseEnvelope<StudentOptionListResponseDto>).data.total,
+    ).toBe(0);
   });
 });
 

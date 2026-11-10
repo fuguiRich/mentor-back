@@ -9,6 +9,7 @@ export const ARCHIVE_TARGET_TYPES = [
   'Assessment',
   'GuidanceRecord',
   'Achievement',
+  'StudentAchievement',
   'Other',
 ] as const;
 

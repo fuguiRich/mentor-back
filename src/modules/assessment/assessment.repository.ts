@@ -316,6 +316,7 @@ export class AssessmentRepository implements MetricsSource {
   async createAppealAndMarkAppealing(
     assessmentId: bigint,
     reason: string,
+    fileIds: string[],
   ): Promise<AssessmentAppeal | null> {
     return this.prisma.client.$transaction(async (tx) => {
       const updated = await tx.assessment.updateMany({
@@ -329,8 +330,37 @@ export class AssessmentRepository implements MetricsSource {
         return null;
       }
       return tx.assessmentAppeal.create({
-        data: { assessmentId, reason, createdBy: 0n, updatedBy: 0n },
+        data: {
+          assessmentId,
+          reason,
+          fileIds,
+          createdBy: 0n,
+          updatedBy: 0n,
+        },
       });
+    });
+  }
+
+  /** 附件元数据：只回未软删的文件 */
+  async findFilesByIds(ids: readonly bigint[]): Promise<
+    Array<{
+      id: bigint;
+      originName: string;
+      mimeType: string;
+      size: number;
+    }>
+  > {
+    if (ids.length === 0) {
+      return [];
+    }
+    return this.prisma.client.sysFile.findMany({
+      where: { id: { in: [...ids] } },
+      select: {
+        id: true,
+        originName: true,
+        mimeType: true,
+        size: true,
+      },
     });
   }
 

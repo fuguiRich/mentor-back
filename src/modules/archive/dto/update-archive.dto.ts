@@ -1,11 +1,14 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  ArrayMaxSize,
+  IsArray,
   IsOptional,
   IsString,
   Length,
   Matches,
   MaxLength,
 } from 'class-validator';
+import { IsBigIntId } from '../../../common/decorators/is-bigint-id.decorator';
 
 /**
  * `PATCH /archives/:id` 的请求体（P4 Task 53 / §6.5）。
@@ -47,4 +50,15 @@ export class UpdateArchiveDto {
     message: 'retentionUntil 必须是 YYYY-MM-DD 或 null',
   })
   retentionUntil?: string | null;
+
+  @ApiPropertyOptional({
+    description: '归档附件（SysFile.id 数组，最多 10 个）；传 [] = 清空',
+    type: [String],
+    example: ['12', '13'],
+  })
+  @IsOptional()
+  @IsArray({ message: 'fileIds 必须是数组' })
+  @ArrayMaxSize(10, { message: '归档附件最多 10 个' })
+  @IsBigIntId({ each: true, message: 'fileIds 必须是数字 ID 数组' })
+  fileIds?: string[];
 }

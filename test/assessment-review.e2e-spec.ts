@@ -26,6 +26,7 @@ import {
 } from './e2e-helpers';
 
 const SYNCED_AT = new Date('2026-10-27T00:00:00.000Z');
+const PDF = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34]);
 
 /**
  * 考核的开与初评（P3 Task 39）。
@@ -141,6 +142,7 @@ describe('考核：开考核与提交初评（P3 Task 39）(e2e)', () => {
       'assessment:list',
       'assessment:appeal',
       'achievement:manage',
+      'file:create',
     ]);
     const studentRole = await createRole('考核学生', 'asm_student', 'self', [
       'review:create',
@@ -726,9 +728,21 @@ describe('考核：开考核与提交初评（P3 Task 39）(e2e)', () => {
     }
     expect(row.status).toBe(2);
 
+    const upload = await api('asm-mentor-a')
+      .post('/files')
+      .attach('files', PDF, {
+        filename: '申诉佐证.pdf',
+        contentType: 'application/pdf',
+      })
+      .expect(201);
+    const file = (upload.body as ResponseEnvelope<{ id: string }[]>).data[0];
+
     const response = await api('asm-mentor-a')
       .post(`/assessments/${row.id.toString()}/appeals`)
-      .send({ reason: '初评材料遗漏了省级奖项，请复核。' })
+      .send({
+        reason: '初评材料遗漏了省级奖项，请复核。',
+        fileIds: [file.id],
+      })
       .expect(201);
 
     const data = (response.body as ResponseEnvelope<AppealResponseDto>).data;
@@ -748,6 +762,31 @@ describe('考核：开考核与提交初评（P3 Task 39）(e2e)', () => {
       handledBy: null,
     });
     expect(data.submittedBy).toMatchObject({ name: 'asm-mentor-a' });
+    expect(data.fileIds).toEqual([file.id]);
+    expect(data.files).toEqual([
+      {
+        id: file.id,
+        originName: '申诉佐证.pdf',
+        mimeType: 'application/pdf',
+        size: PDF.length,
+      },
+    ]);
+
+    const preview = await api('asm-mentor-a')
+      .get(
+        `/assessments/${row.id.toString()}/appeals/${data.id}/files/${file.id}/preview`,
+      )
+      .expect(200);
+    expect(preview.headers['content-disposition']).toContain('inline');
+    expect(Buffer.compare(preview.body as Buffer, PDF)).toBe(0);
+
+    const download = await api('asm-mentor-a')
+      .get(
+        `/assessments/${row.id.toString()}/appeals/${data.id}/files/${file.id}/download`,
+      )
+      .expect(200);
+    expect(download.headers['content-disposition']).toContain('attachment');
+    expect(Buffer.compare(download.body as Buffer, PDF)).toBe(0);
 
     const after = await prisma.client.assessment.findFirst({
       where: { id: row.id },

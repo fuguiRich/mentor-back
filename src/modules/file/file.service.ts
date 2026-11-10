@@ -316,6 +316,17 @@ export class FileService {
     await this.repository.updateOwner(entity.id, ownerType, BigInt(ownerId));
   }
 
+  /**
+   * 只校验「这个文件是当前用户上传的」，不改归属。
+   * 用于「先提交业务行、文件归业务对象」的草稿式挂接（如申诉附件）。
+   */
+  async assertUploadedBy(fileId: string, uploaderId: bigint): Promise<void> {
+    const entity = await this.repository.findById(BigInt(fileId));
+    if (entity === null || entity.createdBy !== uploaderId) {
+      throw this.fileNotFound();
+    }
+  }
+
   // ── 校验 ──────────────────────────────────────────────────────
 
   private validate(file: UploadedFile | undefined): {

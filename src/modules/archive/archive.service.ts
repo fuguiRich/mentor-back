@@ -1,4 +1,4 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable, type StreamableFile } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { ArchiveItem } from '@prisma/client';
 import type { AppConfig } from '../../config/configuration';
@@ -14,12 +14,13 @@ import {
 import { BusinessException } from '../../common/errors/business.exception';
 import { ConfigService as SysConfigService } from '../config/config.service';
 import { DataScopeService } from '../data-scope/data-scope.service';
+import { FileService } from '../file/file.service';
 import { UserService } from '../user/user.service';
 import {
   ARCHIVE_NONCORE_RETENTION_DAYS_CODE,
   DEFAULT_ARCHIVE_NONCORE_RETENTION_DAYS,
 } from './archive.constants';
-import { toArchiveResponse } from './archive.mapper';
+import { toArchiveResponse, archiveFileIds } from './archive.mapper';
 import {
   ArchiveRepository,
   type ArchiveFilter,
@@ -51,6 +52,7 @@ export class ArchiveService {
     private readonly users: UserService,
     private readonly dataScope: DataScopeService,
     private readonly sysConfig: SysConfigService,
+    private readonly fileService: FileService,
     config: ConfigService<AppConfig, true>,
   ) {
     this.timeZone = config.getOrThrow('app.timezone', { infer: true });
@@ -68,6 +70,7 @@ export class ArchiveService {
 
     const now = new Date();
     const retentionDays = await this.retentionDays();
+    const fileIds = await this.normalizeFileIds(dto.fileIds);
     const created = await this.repository.create({
       targetType: dto.targetType,
       targetId: dto.targetId,
@@ -82,8 +85,9 @@ export class ArchiveService {
         retentionDays,
       ),
       summary: dto.summary ?? null,
+      fileIds,
     });
-    return toArchiveResponse(created);
+    return this.toResponse(created);
   }
 
   /** `GET /archives` —— 按调用者的数据范围收窄 */
@@ -113,7 +117,7 @@ export class ArchiveService {
       query.pageSize,
     );
     return {
-      list: rows.map(toArchiveResponse),
+      list: await this.toResponses(rows),
       total,
       page: query.page,
       pageSize: query.pageSize,
@@ -128,18 +132,18 @@ export class ArchiveService {
     }
     const scope = await this.resolveScope(caller);
     if (scope.kind === 'all') {
-      return toArchiveResponse(row);
+      return this.toResponse(row);
     }
     if (scope.kind === 'depts') {
       if (row.deptId !== null && isDeptInFilter(scope, row.deptId)) {
-        return toArchiveResponse(row);
+        return this.toResponse(row);
       }
       throw this.forbidden();
     }
 
     const ownMentorId = await this.resolveSelfMentorId(caller);
     if (ownMentorId !== null && row.mentorId === ownMentorId) {
-      return toArchiveResponse(row);
+      return this.toResponse(row);
     }
     throw this.forbidden();
   }
@@ -169,10 +173,51 @@ export class ArchiveService {
         patch.retentionUntil = dateColumnFromString(dto.retentionUntil);
       }
     }
-    if (Object.keys(patch).length === 0) {
-      return toArchiveResponse(row);
+    if (dto.fileIds !== undefined) {
+      patch.fileIds = await this.normalizeFileIds(dto.fileIds);
     }
-    return toArchiveResponse(await this.repository.update(row.id, patch));
+    if (Object.keys(patch).length === 0) {
+      return this.toResponse(row);
+    }
+    return this.toResponse(await this.repository.update(row.id, patch));
+  }
+
+  /** `GET /archives/:id/files/:fileId/preview` */
+  async previewFile(
+    id: bigint,
+    fileId: bigint,
+    caller: RequestUser,
+  ): Promise<StreamableFile> {
+    return this.serveFile(id, fileId, caller, 'inline');
+  }
+
+  /** `GET /archives/:id/files/:fileId/download` */
+  async downloadFile(
+    id: bigint,
+    fileId: bigint,
+    caller: RequestUser,
+  ): Promise<StreamableFile> {
+    return this.serveFile(
+      id,
+      fileId,
+      caller,
+      'attachment',
+      'application/octet-stream',
+    );
+  }
+
+  private async serveFile(
+    id: bigint,
+    fileId: bigint,
+    caller: RequestUser,
+    disposition: 'inline' | 'attachment',
+    type?: string,
+  ): Promise<StreamableFile> {
+    const row = await this.assertVisible(id, caller);
+    if (!archiveFileIds(row).includes(fileId.toString())) {
+      throw this.fileNotFound();
+    }
+    return this.fileService.serve(fileId, disposition, type);
   }
 
   /** `DELETE /archives/:id` —— 软删（取消归档）；之后同一目标可再归档 */
@@ -196,6 +241,63 @@ export class ArchiveService {
   }
 
   // ── 内部 ──────────────────────────────────────────────────────────
+
+  /** 去重 + 校验附件存在；空数组表示清空 */
+  private async normalizeFileIds(
+    raw: readonly string[] | undefined,
+  ): Promise<string[]> {
+    if (raw === undefined || raw.length === 0) {
+      return [];
+    }
+    const ids = [...new Set(raw)];
+    const files = await this.repository.findFilesByIds(
+      ids.map((id) => BigInt(id)),
+    );
+    if (files.length !== ids.length) {
+      throw this.fileNotFound();
+    }
+    return ids;
+  }
+
+  private async toResponses(
+    rows: readonly ArchiveItem[],
+  ): Promise<ArchiveResponseDto[]> {
+    const ids = [...new Set(rows.flatMap((row) => archiveFileIds(row)))].map(
+      (id) => BigInt(id),
+    );
+    const files = await this.repository.findFilesByIds(ids);
+    const byId = new Map(files.map((file) => [file.id.toString(), file]));
+    return rows.map((row) =>
+      toArchiveResponse(
+        row,
+        archiveFileIds(row)
+          .map((id) => byId.get(id))
+          .filter(
+            (
+              file,
+            ): file is {
+              id: bigint;
+              originName: string;
+              mimeType: string;
+              size: number;
+            } => file !== undefined,
+          ),
+      ),
+    );
+  }
+
+  private async toResponse(row: ArchiveItem): Promise<ArchiveResponseDto> {
+    const [response] = await this.toResponses([row]);
+    return response;
+  }
+
+  private fileNotFound(): BusinessException {
+    return new BusinessException(
+      ErrorCode.FILE_NOT_FOUND,
+      '文件不存在',
+      HttpStatus.NOT_FOUND,
+    );
+  }
 
   private async assertVisible(
     id: bigint,

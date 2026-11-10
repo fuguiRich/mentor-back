@@ -1,5 +1,20 @@
 import { ApiProperty } from '@nestjs/swagger';
 
+/** 归档附件元数据（文件本体走 preview / download 字节流） */
+export class ArchiveFileRefDto {
+  @ApiProperty({ description: '文件 ID', example: '12' })
+  id!: string;
+
+  @ApiProperty({ description: '原始文件名', example: '获奖证书.pdf' })
+  originName!: string;
+
+  @ApiProperty({ description: 'MIME 类型', example: 'application/pdf' })
+  mimeType!: string;
+
+  @ApiProperty({ description: '文件大小（字节）', example: 102400 })
+  size!: number;
+}
+
 /**
  * 一条归档条目的响应形状（RES-03 / RES-04：显式映射，不序列化实体）。
  *
@@ -76,6 +91,19 @@ export class ArchiveResponseDto {
     example: '手工归档的非核心材料',
   })
   summary!: string | null;
+
+  @ApiProperty({
+    description: '归档附件 ID 数组；没有附件时为 []',
+    type: [String],
+    example: ['12'],
+  })
+  fileIds!: string[];
+
+  @ApiProperty({
+    description: '归档附件元数据；没有附件时为 []',
+    type: [ArchiveFileRefDto],
+  })
+  files!: ArchiveFileRefDto[];
 
   @ApiProperty({
     description: '创建时间（ISO 8601）',

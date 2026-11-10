@@ -9,6 +9,7 @@ import {
   Patch,
   Post,
   Query,
+  StreamableFile,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -19,16 +20,19 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiProduces,
   ApiTags,
 } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { DataScope } from '../../common/decorators/data-scope.decorator';
+import { NoEnvelope } from '../../common/decorators/no-envelope.decorator';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { ErrorCode } from '../../common/constants/error-code';
 import type { RequestUser } from '../../common/context/request-context';
 import { errExample } from '../../common/dto/err-example';
 import { ArchiveService } from './archive.service';
 import { ArchiveParamDto } from './dto/archive-param.dto';
+import { ArchiveFileParamDto } from './dto/archive-file-param.dto';
 import {
   ArchiveListResponseDto,
   ArchiveResponseDto,
@@ -175,6 +179,78 @@ export class ArchiveController {
     @CurrentUser() caller: RequestUser,
   ): Promise<ArchiveResponseDto> {
     return this.archiveService.findById(BigInt(params.id), caller);
+  }
+
+  @Get(':id/files/:fileId/preview')
+  @NoEnvelope()
+  @RequirePermission('archive:list')
+  @DataScope('all')
+  @ApiOperation({
+    summary: '行内预览归档附件',
+    description:
+      '可见性与归档详情一致；`fileId` 必须是该归档的附件，否则 404 / 28101。' +
+      '返回字节流，不是 JSON。',
+  })
+  @ApiProduces(
+    'image/png',
+    'image/jpeg',
+    'image/gif',
+    'image/webp',
+    'image/bmp',
+    'application/pdf',
+    'application/octet-stream',
+  )
+  @ApiOkResponse({ description: '返回文件字节流（不是 JSON）' })
+  @ApiForbiddenResponse({
+    description: '超出数据范围（403 / 10003）',
+    schema: { example: errExample(ErrorCode.FORBIDDEN, '无权限') },
+  })
+  @ApiNotFoundResponse({
+    description: '归档 / 附件不存在（404 / 37001 或 28101）',
+    schema: {
+      example: errExample(ErrorCode.FILE_NOT_FOUND, '文件不存在'),
+    },
+  })
+  async previewFile(
+    @Param() params: ArchiveFileParamDto,
+    @CurrentUser() caller: RequestUser,
+  ): Promise<StreamableFile> {
+    return this.archiveService.previewFile(
+      BigInt(params.id),
+      BigInt(params.fileId),
+      caller,
+    );
+  }
+
+  @Get(':id/files/:fileId/download')
+  @NoEnvelope()
+  @RequirePermission('archive:list')
+  @DataScope('all')
+  @ApiOperation({
+    summary: '下载归档附件',
+    description: '可见性同预览；Content-Disposition: attachment。',
+  })
+  @ApiProduces('application/octet-stream')
+  @ApiOkResponse({ description: '返回文件字节流（不是 JSON）' })
+  @ApiForbiddenResponse({
+    description: '超出数据范围（403 / 10003）',
+    schema: { example: errExample(ErrorCode.FORBIDDEN, '无权限') },
+  })
+  @ApiNotFoundResponse({
+    description: '归档 / 附件不存在（404 / 37001 或 28101）',
+    schema: {
+      example: errExample(ErrorCode.FILE_NOT_FOUND, '文件不存在'),
+    },
+  })
+  async downloadFile(
+    @Param() params: ArchiveFileParamDto,
+    @CurrentUser() caller: RequestUser,
+  ): Promise<StreamableFile> {
+    return this.archiveService.downloadFile(
+      BigInt(params.id),
+      BigInt(params.fileId),
+      caller,
+    );
   }
 
   @Patch(':id')

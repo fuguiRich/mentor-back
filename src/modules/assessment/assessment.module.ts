@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { SysConfigModule } from '../config/config.module';
 import { DataScopeModule } from '../data-scope/data-scope.module';
+import { FileModule } from '../file/file.module';
 import { UserModule } from '../user/user.module';
 import { AssessmentController } from './assessment.controller';
 import { AssessmentRepository } from './assessment.repository';
@@ -15,7 +16,7 @@ import { AssessmentService } from './assessment.service';
  * 两张表；评价 / 指导记录 / 成果都只读。
  */
 @Module({
-  imports: [SysConfigModule, DataScopeModule, UserModule],
+  imports: [SysConfigModule, DataScopeModule, UserModule, FileModule],
   controllers: [AssessmentController],
   providers: [AssessmentService, AssessmentRepository],
   exports: [AssessmentService],
