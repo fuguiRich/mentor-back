@@ -1461,6 +1461,116 @@ async function backfillSuperAdminRole(): Promise<void> {
  * - 有同名活跃部门 → 用户 / 同步组织改挂过去，软删带后缀的那条；
  * - 没有 → 去掉后缀，原地改名。
  */
+/**
+ * 合并重复的根部门子树。
+ *
+ * 历史 seed 在「admin 在、根部门暂时解析不到」时补过第二个根（如「总部」），
+ * 之后 SSO 同步又把真正的根建/复用到另一个 id。两棵树同名不同 id，用户挂在
+ * 旧树上时，按部门下钻的数据范围就永远看不到另一棵树的学生。
+ *
+ * 以 admin 所在根为 canonical：其它根的子树按「同名同父」合并；找不到同名
+ * 对应部门的节点直接挂到 canonical 对应父下。部门上的用户 / 同步组织 /
+ * 归档快照 / 学生成果快照一并改挂，最后软删旧根与被合并的重复节点。
+ */
+async function mergeDuplicateRoots(): Promise<void> {
+  const admin = await prisma.sysUser.findFirst({
+    where: { username: ADMIN_USERNAME, deletedAt: null },
+    select: { deptId: true },
+  });
+  const roots = await prisma.sysDept.findMany({
+    where: { parentId: null, deletedAt: null },
+    orderBy: { id: 'asc' },
+  });
+  if (roots.length <= 1) {
+    return;
+  }
+
+  const canonical =
+    (admin === null
+      ? undefined
+      : roots.find((root) => root.id === admin.deptId)) ?? roots[0];
+  let mergedRoots = 0;
+  let mergedDepts = 0;
+
+  const moveRefs = async (from: bigint, to: bigint): Promise<void> => {
+    await prisma.sysUser.updateMany({
+      where: { deptId: from },
+      data: { deptId: to },
+    });
+    await prisma.syncOrgUnit.updateMany({
+      where: { deptId: from },
+      data: { deptId: to },
+    });
+    await prisma.archiveItem.updateMany({
+      where: { deptId: from },
+      data: { deptId: to },
+    });
+    await prisma.studentAchievement.updateMany({
+      where: { deptId: from },
+      data: { deptId: to },
+    });
+  };
+
+  for (const duplicateRoot of roots) {
+    if (duplicateRoot.id === canonical.id) {
+      continue;
+    }
+    await moveRefs(duplicateRoot.id, canonical.id);
+
+    const parentMap = new Map<string, bigint>([
+      [duplicateRoot.id.toString(), canonical.id],
+    ]);
+    const removeIds: bigint[] = [];
+    const queue: bigint[] = [duplicateRoot.id];
+    while (queue.length > 0) {
+      const parentId = queue.shift() as bigint;
+      const targetParent = parentMap.get(parentId.toString()) ?? canonical.id;
+      const children = await prisma.sysDept.findMany({
+        where: { parentId, deletedAt: null },
+      });
+      for (const child of children) {
+        const twin = await prisma.sysDept.findFirst({
+          where: {
+            parentId: targetParent,
+            name: child.name,
+            deletedAt: null,
+            id: { not: child.id },
+          },
+        });
+        if (twin === null) {
+          await prisma.sysDept.update({
+            where: { id: child.id },
+            data: { parentId: targetParent },
+          });
+          parentMap.set(child.id.toString(), child.id);
+        } else {
+          await moveRefs(child.id, twin.id);
+          parentMap.set(child.id.toString(), twin.id);
+          removeIds.push(child.id);
+          mergedDepts += 1;
+        }
+        queue.push(child.id);
+      }
+    }
+
+    for (const id of removeIds) {
+      await prisma.sysDept.update({
+        where: { id },
+        data: { deletedAt: new Date(), deletedBy: SYSTEM_USER_ID },
+      });
+    }
+    await prisma.sysDept.update({
+      where: { id: duplicateRoot.id },
+      data: { deletedAt: new Date(), deletedBy: SYSTEM_USER_ID },
+    });
+    mergedRoots += 1;
+  }
+
+  console.log(
+    `重复根部门合并：根 ${mergedRoots}，重复节点 ${mergedDepts}（canonical=${canonical.id.toString()}）`,
+  );
+}
+
 async function cleanupSsoDeptSuffixes(): Promise<void> {
   const rows = await prisma.sysDept.findMany({
     where: { deletedAt: null, name: { contains: '（sso:' } },
@@ -1511,6 +1621,7 @@ async function main(): Promise<void> {
   await seedRoles();
   await seedPermissions();
   await seedConfigs();
+  await mergeDuplicateRoots();
   await cleanupSsoDeptSuffixes();
 
   // 用 admin 账号判断「seed 是否已经跑过」，而不是根部门的名字：
