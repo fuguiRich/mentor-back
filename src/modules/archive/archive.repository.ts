@@ -40,6 +40,7 @@ export interface ArchivePatch {
   summary?: string;
   retentionUntil?: Date | null;
   fileIds?: string[];
+  core?: number;
 }
 
 /**

@@ -199,6 +199,8 @@ export class StudentAchievementRepository {
       const existingArchive = await tx.archiveItem.findFirst({
         where: { targetType: 'StudentAchievement', targetId },
       });
+      const proofIds =
+        row.proofFileId === null ? [] : [row.proofFileId.toString()];
       if (existingArchive === null) {
         await tx.archiveItem.create({
           data: {
@@ -211,10 +213,24 @@ export class StudentAchievementRepository {
             core: 0,
             archivedAt: archive.archivedAt,
             retentionUntil: archive.retentionUntil,
+            fileIds: proofIds,
             createdBy: 0n,
             updatedBy: 0n,
           },
         });
+      } else if (proofIds.length > 0) {
+        // 历史归档可能是在 proofFileId 为空时落的：补上学生成果的佐证
+        const current = Array.isArray(existingArchive.fileIds)
+          ? existingArchive.fileIds.filter(
+              (item): item is string => typeof item === 'string',
+            )
+          : [];
+        if (!proofIds.every((fileId) => current.includes(fileId))) {
+          await tx.archiveItem.update({
+            where: { id: existingArchive.id },
+            data: { fileIds: [...new Set([...current, ...proofIds])] },
+          });
+        }
       }
       return true;
     });

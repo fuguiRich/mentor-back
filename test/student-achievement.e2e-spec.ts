@@ -596,6 +596,36 @@ describe('学生成果关联（P5 Task 59 / §5.4）(e2e)', () => {
       (self.body as ResponseEnvelope<StudentOptionListResponseDto>).data.total,
     ).toBe(0);
   });
+
+  it('判据 15：学生成果佐证自动写入归档附件', async () => {
+    const upload = await api('sa-college-a')
+      .post('/files')
+      .attach('files', PDF, {
+        filename: '学生成果佐证.pdf',
+        contentType: 'application/pdf',
+      })
+      .expect(201);
+    const file = (upload.body as ResponseEnvelope<FileResponseDto[]>).data[0];
+
+    const created = await api('sa-college-a')
+      .post('/student-achievements')
+      .send(
+        body({
+          title: '自动归档佐证成果',
+          proofFileId: file.id,
+          mentorProfileId: profiles.get('a')?.toString(),
+        }),
+      )
+      .expect(201);
+    const id = (created.body as ResponseEnvelope<StudentAchievementResponseDto>)
+      .data.id;
+
+    const archive = await prisma.client.archiveItem.findFirst({
+      where: { targetType: 'StudentAchievement', targetId: id },
+    });
+    expect(archive).not.toBeNull();
+    expect(archive?.fileIds).toEqual([file.id]);
+  });
 });
 
 async function clearStudentAchievementTables(

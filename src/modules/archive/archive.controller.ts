@@ -40,6 +40,7 @@ import {
 import { CreateArchiveDto } from './dto/create-archive.dto';
 import { ListArchiveQueryDto } from './dto/list-archive-query.dto';
 import { UpdateArchiveDto } from './dto/update-archive.dto';
+import { UpdateArchiveCoreDto } from './dto/update-archive-core.dto';
 
 /**
  * 归档（P4 Task 52 / §4.7）。
@@ -289,6 +290,37 @@ export class ArchiveController {
     @CurrentUser() caller: RequestUser,
   ): Promise<ArchiveResponseDto> {
     return this.archiveService.update(BigInt(params.id), dto, caller);
+  }
+
+  @Patch(':id/core')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermission('archive:manage')
+  @DataScope('all')
+  @ApiOperation({
+    summary: '切换归档核心 / 非核心（双创学院管理员）',
+    description:
+      '`core = 1`：永久保存，`retentionUntil` 清空；' +
+      '`core = 0`：从今天重新计算保留期（`archive.noncore_retention_days`）。' +
+      '不存在 / 已软删 → 404 / 37001；超出数据范围 → 403 / 10003。',
+  })
+  @ApiBody({ type: UpdateArchiveCoreDto })
+  @ApiOkResponse({ type: ArchiveResponseDto, description: '切换成功（200）' })
+  @ApiBadRequestResponse({
+    description: 'core 不是 0 / 1（400 / 10001）',
+    schema: { example: errExample(ErrorCode.PARAM_INVALID, '参数校验失败') },
+  })
+  @ApiNotFoundResponse({
+    description: '归档条目不存在（404 / 37001）',
+    schema: {
+      example: errExample(ErrorCode.ARCHIVE_NOT_FOUND, '归档条目不存在'),
+    },
+  })
+  async updateCore(
+    @Param() params: ArchiveParamDto,
+    @Body() dto: UpdateArchiveCoreDto,
+    @CurrentUser() caller: RequestUser,
+  ): Promise<ArchiveResponseDto> {
+    return this.archiveService.updateCore(BigInt(params.id), dto, caller);
   }
 
   @Delete(':id')

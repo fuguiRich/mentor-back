@@ -11759,6 +11759,78 @@
         ]
       }
     },
+    "/archives/{id}/core": {
+      "patch": {
+        "description": "`core = 1`：永久保存，`retentionUntil` 清空；`core = 0`：从今天重新计算保留期（`archive.noncore_retention_days`）。不存在 / 已软删 → 404 / 37001；超出数据范围 → 403 / 10003。",
+        "operationId": "ArchiveController_updateCore",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "归档条目 ID（BIGINT 对外字符串）",
+            "schema": {
+              "example": "1",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateArchiveCoreDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "切换成功（200）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchiveResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "core 不是 0 / 1（400 / 10001）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "example": {
+                    "code": 10001,
+                    "message": "参数校验失败",
+                    "data": null
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "归档条目不存在（404 / 37001）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "example": {
+                    "code": 37001,
+                    "message": "归档条目不存在",
+                    "data": null
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "切换归档核心 / 非核心（双创学院管理员）",
+        "tags": [
+          "归档"
+        ]
+      }
+    },
     "/work-progress": {
       "get": {
         "description": "三个节点：待确认预约（`status = 0`）、逾期未填指导记录（`status = 1`、`requestedTime < now` 且无记录）、当前学期待处理考核（`status ∈ {0,1}`）。双创学院看全校；学院管理员按导师所在部门只看本院。",
@@ -19755,6 +19827,23 @@
             }
           }
         }
+      },
+      "UpdateArchiveCoreDto": {
+        "type": "object",
+        "properties": {
+          "core": {
+            "type": "number",
+            "description": "1 核心（永久保存）/ 0 非核心（到期清理）",
+            "enum": [
+              0,
+              1
+            ],
+            "example": 1
+          }
+        },
+        "required": [
+          "core"
+        ]
       },
       "WorkProgressMentorDto": {
         "type": "object",

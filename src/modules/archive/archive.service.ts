@@ -31,6 +31,7 @@ import type { ArchiveResponseDto } from './dto/archive-response.dto';
 import type { CreateArchiveDto } from './dto/create-archive.dto';
 import type { ListArchiveQueryDto } from './dto/list-archive-query.dto';
 import type { UpdateArchiveDto } from './dto/update-archive.dto';
+import type { UpdateArchiveCoreDto } from './dto/update-archive-core.dto';
 
 /**
  * 归档（P4 Task 52 / §4.7）。
@@ -178,6 +179,31 @@ export class ArchiveService {
     }
     if (Object.keys(patch).length === 0) {
       return this.toResponse(row);
+    }
+    return this.toResponse(await this.repository.update(row.id, patch));
+  }
+
+  /** `PATCH /archives/:id/core` —— 切换核心 / 非核心 */
+  async updateCore(
+    id: bigint,
+    dto: UpdateArchiveCoreDto,
+    caller: RequestUser,
+  ): Promise<ArchiveResponseDto> {
+    const row = await this.assertVisible(id, caller);
+    if (row.core === dto.core) {
+      return this.toResponse(row);
+    }
+    const patch: ArchivePatch = { core: dto.core };
+    if (dto.core === 1) {
+      // 核心 = 永久保存：保留期必须清空
+      patch.retentionUntil = null;
+    } else {
+      // 非核心：从今天重新计算保留期
+      const now = new Date();
+      patch.retentionUntil = addDays(
+        todayInTimeZone(now, this.timeZone),
+        await this.retentionDays(),
+      );
     }
     return this.toResponse(await this.repository.update(row.id, patch));
   }

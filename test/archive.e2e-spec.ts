@@ -500,6 +500,26 @@ describe('归档（P4 Task 52 / §4.7）(e2e)', () => {
     expect(
       (cleared.body as ResponseEnvelope<ArchiveResponseDto>).data.fileIds,
     ).toEqual([]);
+
+    const core = await api('arc-sc')
+      .patch(`/archives/${data.id}/core`)
+      .send({ core: 1 })
+      .expect(200);
+    expect(
+      (core.body as ResponseEnvelope<ArchiveResponseDto>).data,
+    ).toMatchObject({
+      core: 1,
+      retentionUntil: null,
+    });
+
+    const nonCore = await api('arc-sc')
+      .patch(`/archives/${data.id}/core`)
+      .send({ core: 0 })
+      .expect(200);
+    expect(
+      (nonCore.body as ResponseEnvelope<ArchiveResponseDto>).data
+        .retentionUntil,
+    ).not.toBeNull();
   });
 
   it('判据 5：手工归档不允许调用方设置 core → 400 / 10001', async () => {
