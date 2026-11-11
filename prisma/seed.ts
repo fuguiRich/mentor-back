@@ -1617,12 +1617,57 @@ async function cleanupSsoDeptSuffixes(): Promise<void> {
   }
 }
 
+/**
+ * 回填历史学生成果归档附件：学生成果关联时自动生成的归档条目应带上
+ * `proofFileId`。旧版本没有写 `fileIds`，这里按现有成果补齐。
+ */
+async function backfillStudentAchievementArchiveFiles(): Promise<void> {
+  const achievements = await prisma.studentAchievement.findMany({
+    where: { proofFileId: { not: null }, deletedAt: null },
+    select: { id: true, proofFileId: true },
+  });
+  let updated = 0;
+  for (const achievement of achievements) {
+    if (achievement.proofFileId === null) {
+      continue;
+    }
+    const archive = await prisma.archiveItem.findFirst({
+      where: {
+        targetType: 'StudentAchievement',
+        targetId: achievement.id.toString(),
+        deletedAt: null,
+      },
+    });
+    if (archive === null) {
+      continue;
+    }
+    const current = Array.isArray(archive.fileIds)
+      ? archive.fileIds.filter(
+          (item): item is string => typeof item === 'string',
+        )
+      : [];
+    const proofId = achievement.proofFileId.toString();
+    if (current.includes(proofId)) {
+      continue;
+    }
+    await prisma.archiveItem.update({
+      where: { id: archive.id },
+      data: { fileIds: [...current, proofId] },
+    });
+    updated += 1;
+  }
+  if (updated > 0) {
+    console.log(`学生成果归档附件回填：${updated} 条`);
+  }
+}
+
 async function main(): Promise<void> {
   await seedRoles();
   await seedPermissions();
   await seedConfigs();
   await mergeDuplicateRoots();
   await cleanupSsoDeptSuffixes();
+  await backfillStudentAchievementArchiveFiles();
 
   // 用 admin 账号判断「seed 是否已经跑过」，而不是根部门的名字：
   // SSO 同步会把根部门改名（如「长沙医学院」），按名字会误判成没播过。
