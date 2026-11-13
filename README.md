@@ -39,6 +39,19 @@ pnpm start:dev
 要核对当前连的是哪个库，打印 `new URL(process.env.DATABASE_URL).pathname`，
 **不要**把整个 URL 贴进任何报告或聊天窗口。
 
+### 部署（v1）
+
+**脚本都在服务器上运行**（服务器已装好 MySQL / nginx 时会自动复用，不重复安装）：
+
+- 后端 + 管理端 + 学生端：`bash scripts/deploy/deploy.sh all`
+- Docker / Compose：`bash scripts/deploy/deploy-docker.sh all`
+- （可选）从本地推送到远端：`bash scripts/deploy/deploy-remote.sh all`
+- （可选）本地交互向导：`bash scripts/deploy/deploy-oneclick.sh`
+
+首次准备、systemd / nginx 示例、回滚与生产注意事项见
+[docs/部署-v1.md](docs/部署-v1.md)；容器化部署见
+[docs/部署-docker.md](docs/部署-docker.md)。
+
 ---
 
 ## 通用后台已经给了什么

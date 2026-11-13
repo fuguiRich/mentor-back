@@ -1,0 +1,41 @@
+# mentor-back systemd unit 示例
+#
+#   sudo cp scripts/deploy/mentor-back.service.example /etc/systemd/system/mentor-back.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now mentor-back
+#
+# 注意：
+# - WorkingDirectory 必须是后端项目根：Prisma CLI 与应用都从 cwd 读 .env；
+#   FILE_ROOT 若是相对路径也相对这里。建议在生产 .env 里写绝对路径。
+# - ExecStart 的 node 路径按 `which node` 的输出来改（nvm 安装的 node 不在这）。
+# - User/Group 用实际部署用户；它需要读项目目录、写 FILE_ROOT。
+
+[Unit]
+Description=mentor-back (NestJS)
+After=network-online.target mysql.service redis-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mentor
+Group=mentor
+WorkingDirectory=/opt/mentor/mentor-back
+Environment=NODE_ENV=production
+EnvironmentFile=/opt/mentor/mentor-back/.env
+ExecStart=/usr/bin/node dist/main.js
+Restart=always
+RestartSec=3
+# 优雅退出：Nest 收到 SIGTERM 后会关闭监听并断开 Prisma
+KillSignal=SIGTERM
+TimeoutStopSec=20
+
+# 日志走 journald：journalctl -u mentor-back -f
+StandardOutput=journal
+StandardError=journal
+
+# 文件权限最小化
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

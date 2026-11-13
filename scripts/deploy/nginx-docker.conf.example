@@ -1,0 +1,64 @@
+# Docker 模式的宿主机 nginx 示例
+#
+# 容器内 nginx 已经负责 SPA 回退、静态缓存和 /api → mentor-back:3000 反代，
+# 宿主机的职责只有：域名 + TLS + 把请求转给容器端口。
+#
+#   sudo cp scripts/deploy/nginx-docker.conf.example /etc/nginx/conf.d/mentor.conf
+#   # 改 server_name / 证书路径，然后 nginx -t && systemctl reload nginx
+#
+# 端口来自 deploy/.env：WEB_PORT=8081、MOBILE_PORT=8082（compose 只绑 127.0.0.1）。
+
+upstream mentor_web_docker {
+    server 127.0.0.1:8081;
+    keepalive 32;
+}
+
+upstream mentor_mobile_docker {
+    server 127.0.0.1:8082;
+    keepalive 32;
+}
+
+server {
+    listen 80;
+    server_name admin.example.com;
+
+    client_max_body_size 20m;
+
+    location / {
+        proxy_pass http://mentor_web_docker;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 120s;
+    }
+}
+
+server {
+    listen 80;
+    server_name m.example.com;
+
+    client_max_body_size 20m;
+
+    location / {
+        proxy_pass http://mentor_mobile_docker;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 120s;
+    }
+}
+
+# HTTPS（生产必须）：在对应 server 上加 443 + 证书，80 改 301 跳转。
+# 例：
+#   listen 443 ssl http2;
+#   ssl_certificate     /etc/letsencrypt/live/admin.example.com/fullchain.pem;
+#   ssl_certificate_key /etc/letsencrypt/live/admin.example.com/privkey.pem;
+#   return 301 https://$host$request_uri;   # 放在 80 的 server 里

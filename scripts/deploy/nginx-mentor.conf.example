@@ -1,0 +1,107 @@
+# mentor v1 nginx 配置示例（管理端 / 学生端两个站点 + /api 反代）
+#
+#   sudo cp scripts/deploy/nginx-mentor.conf.example /etc/nginx/conf.d/mentor.conf
+#   # 改 server_name / 证书路径，然后：
+#   sudo nginx -t && sudo systemctl reload nginx
+#
+# 约定：
+# - 两个站点各自独立域名（管理端 admin.example.com、学生端 m.example.com）。
+#   前端构建时 base 是 "/"，挂在子路径（/admin、/m）需要改前端路由 basepath，
+#   本示例不做。
+# - 前端请求同源 /api/，由 nginx 反代到后端并剥掉前缀，所以**不需要 CORS**。
+# - root 指向部署脚本维护的 current 符号链接；历史版本在 releases/ 下，回滚改链接即可。
+# - 文件上传上限要比后端 FILE_MAX_BYTES（默认 10MB）略大。
+
+upstream mentor_backend {
+    server 127.0.0.1:3000;
+    keepalive 32;
+}
+
+# ---------- 管理端 ----------
+server {
+    listen 80;
+    server_name admin.example.com;
+
+    root /var/www/mentor-web/current;
+    index index.html;
+
+    client_max_body_size 20m;
+
+    # 接口：/api/xxx -> 后端 /xxx
+    location /api/ {
+        proxy_pass http://mentor_backend/;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 60s;
+    }
+
+    # SPA：未知路径回落到 index.html，刷新子路由不 404
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location = /index.html {
+        add_header Cache-Control "no-store, must-revalidate";
+    }
+
+    # Vite 产物文件名带 hash，可以长缓存
+    location ~* \.(?:js|css|woff2?|ttf|png|jpe?g|gif|svg|ico)$ {
+        expires 30d;
+        add_header Cache-Control "public, max-age=2592000, immutable";
+        try_files $uri =404;
+    }
+
+    # 生产默认不挂 Swagger；内网要留就显式 SWAGGER_ENABLED=1 并放开下面这段
+    # location /api-docs/ {
+    #     proxy_pass http://mentor_backend/;
+    #     proxy_set_header Host $host;
+    # }
+}
+
+# ---------- 学生端 ----------
+server {
+    listen 80;
+    server_name m.example.com;
+
+    root /var/www/mentor-mobile/current;
+    index index.html;
+
+    client_max_body_size 20m;
+
+    location /api/ {
+        proxy_pass http://mentor_backend/;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 60s;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location = /index.html {
+        add_header Cache-Control "no-store, must-revalidate";
+    }
+
+    location ~* \.(?:js|css|woff2?|ttf|png|jpe?g|gif|svg|ico)$ {
+        expires 30d;
+        add_header Cache-Control "public, max-age=2592000, immutable";
+        try_files $uri =404;
+    }
+}
+
+# HTTPS（生产必须）：用 certbot 或自己签的证书，在对应 server 上加：
+#   listen 443 ssl http2;
+#   ssl_certificate     /etc/letsencrypt/live/admin.example.com/fullchain.pem;
+#   ssl_certificate_key /etc/letsencrypt/live/admin.example.com/privkey.pem;
+# 并把 80 的 server 改成 301 跳转到 https。

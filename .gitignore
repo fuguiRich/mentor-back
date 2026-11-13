@@ -9,3 +9,8 @@ coverage
 
 # SDD 工作区：基线 / brief / 报告 / 评审包，不进仓库
 .superpowers/
+
+# 部署配置（含服务器路径 / sudo 策略），按环境各写一份
+scripts/deploy/deploy.env
+scripts/deploy/deploy-remote.env
+deploy/.env

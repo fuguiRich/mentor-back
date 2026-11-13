@@ -1,0 +1,15 @@
+# Docker 构建上下文裁剪（后端）。运行时配置走 compose env_file，不打进镜像。
+node_modules
+dist
+coverage
+.git
+.gitignore
+.env
+.env.*
+.uploads
+.superpowers
+docs
+test
+scripts/deploy
+*.log
+.DS_Store
