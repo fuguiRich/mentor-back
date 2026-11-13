@@ -1,9 +1,10 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
-import type { SyncPerson } from '@prisma/client';
+import type { StudentReview, SyncPerson } from '@prisma/client';
 import { ErrorCode } from '../../common/constants/error-code';
 import type { RequestUser } from '../../common/context/request-context';
 import { BusinessException } from '../../common/errors/business.exception';
 import { UserService } from '../user/user.service';
+import { ConfigService } from '../config/config.service';
 import { AppointmentService } from '../appointment/appointment.service';
 import { APPOINTMENT_STATUS } from '../appointment/dto/create-appointment.dto';
 import type { CreateReviewDto } from './dto/create-review.dto';
@@ -19,13 +20,24 @@ import { ReviewRepository } from './review.repository';
 const MENTOR_PROFILE_APPROVED = 2;
 
 /**
+ * 评价窗口（与 `AppointmentService.expireOverdue` 的 `4 → 6` 同一个配置键）。
+ * 裁决完成的预约同样按这个天数开窗：`updated_at` 即裁决时间（`6` 是终态，
+ * 之后没有写路径会再刷新它）。
+ */
+const REVIEW_TTL_CONFIG_CODE = 'appointment.review_ttl_days';
+const DEFAULT_REVIEW_TTL_DAYS = 30;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/**
  * 学生评价（P3 Task 34 / 需求 §2.5）。
  *
  * 三条不变量：
  * 1. **只有申请人本人能写**。可见 ≠ 可写：管理员看得见这条预约，但评价是学生的
  *    主观判断，管理员代写会把「学生评价」变成「学院评价」。
- * 2. **只在 `4 STUDENT_CONFIRMED` 上写**（R43）。写评价与 `4 → 6` 同一事务，
- *    所以「有评价但没完成」与「完成了但没评价」都不会成为稳定状态。
+ * 2. **正常链路只在 `4 STUDENT_CONFIRMED` 上写**（R43）。写评价与 `4 → 6`
+ *    同一事务，所以「有评价但没完成」与「完成了但没评价」都不会成为稳定状态。
+ *    唯一的例外是**异议复核完成**（`5 → 6`，带 `adjudicateComment`）：那条预约
+ *    永远走不到 `4`，只允许在裁决后的评价窗口内补写，见 {@link create}。
  * 3. **匿名**（R44）。响应里没有任何学生身份字段，见 {@link ReviewResponseDto}。
  */
 @Injectable()
@@ -34,6 +46,7 @@ export class ReviewService {
     private readonly repository: ReviewRepository,
     private readonly appointments: AppointmentService,
     private readonly users: UserService,
+    private readonly config: ConfigService,
   ) {}
 
   /**
@@ -43,11 +56,18 @@ export class ReviewService {
    *   1. 预约不存在 / 已软删 → **404 / 32001**（复用预约域的可见性断言）
    *   2. 不可见 / 不是申请人本人 → **403 / 32002**
    *   3. 已有未删评价 → **409 / 34002**
-   *   4. 预约状态不是 `4` → **409 / 34003**
+   *   4. 状态不是 `4 STUDENT_CONFIRMED`，也不是「裁决完成且仍在评价窗口内」→
+   *      **409 / 34003**（窗口到期单独提示「评价窗口已关闭」）
    *
    * 第 3 条排在第 4 条**前面**：写评价与 `4 → 6` 同事务，评价过的预约状态必然是 `6`，
    * 状态优先的话 34002 永远不可达。并发下两个请求都过第 3 条，输的一方在事务里被
    * `updateMany` 的 `count === 0` 挡下，得到 34003。
+   *
+   * **裁决完成（`6` + `adjudicateComment`）的两条路**：
+   * - 普通链路：`4 → 6` 与插评价同一事务；
+   * - 异议链路：预约由 `5 → 6` 裁决完成，永远到不了 `4`。这里不迁移状态，
+   *   只在裁决后 `appointment.review_ttl_days` 内补插评价，否则这条预约的
+   *   评价永久缺席，导师评分样本也永远缺这一条。
    */
   async create(
     appointmentId: bigint,
@@ -74,23 +94,74 @@ export class ReviewService {
       throw this.alreadyExists();
     }
 
-    if (appointment.status !== APPOINTMENT_STATUS.STUDENT_CONFIRMED) {
-      throw this.notAllowed();
-    }
-
-    const created = await this.repository.createWithTransition(appointmentId, {
+    const input = {
       attitude: dto.attitude,
       expertise: dto.expertise,
       effect: dto.effect,
       overallScore: this.overallScore(dto),
       comment: dto.comment ?? null,
-    });
-    if (created === null) {
-      // 条件更新没命中：并发的另一个请求先把预约推进到了 6
+    };
+
+    if (appointment.status === APPOINTMENT_STATUS.STUDENT_CONFIRMED) {
+      const created = await this.repository.createWithTransition(
+        appointmentId,
+        input,
+      );
+      if (created === null) {
+        // 条件更新没命中：并发的另一个请求先把预约推进到了 6
+        throw this.notAllowed();
+      }
+      return toReviewResponse(created, appointment.mentorProfileId);
+    }
+
+    if (!this.isAdjudicated(appointment)) {
       throw this.notAllowed();
     }
 
+    const reviewDays = Math.max(
+      0,
+      await this.config.getNumber(
+        REVIEW_TTL_CONFIG_CODE,
+        DEFAULT_REVIEW_TTL_DAYS,
+      ),
+    );
+    const windowStart = new Date(Date.now() - reviewDays * MS_PER_DAY);
+    if (appointment.updatedAt < windowStart) {
+      throw this.reviewWindowClosed();
+    }
+
+    let created: StudentReview | null;
+    try {
+      created = await this.repository.createForAdjudicated(
+        appointmentId,
+        input,
+        windowStart,
+      );
+    } catch (error) {
+      // 并发下两个请求都过了预检：评价表的业务唯一键只有
+      // `uk_student_review_appointment_active`，P2002 只可能是重复评价。
+      if ((error as { code?: unknown }).code === 'P2002') {
+        throw this.alreadyExists();
+      }
+      throw error;
+    }
+    if (created === null) {
+      // 事务里条件不再成立：窗口在请求处理途中到期（终态 6 没有其它并发写路径）
+      throw this.reviewWindowClosed();
+    }
+
     return toReviewResponse(created, appointment.mentorProfileId);
+  }
+
+  /** 「由异议复核裁决完成」：终态 `6` + 有一条裁决意见 */
+  private isAdjudicated(appointment: {
+    status: number;
+    adjudicateComment: string | null;
+  }): boolean {
+    return (
+      appointment.status === APPOINTMENT_STATUS.COMPLETED &&
+      appointment.adjudicateComment !== null
+    );
   }
 
   /**
@@ -195,6 +266,15 @@ export class ReviewService {
     return new BusinessException(
       ErrorCode.REVIEW_NOT_ALLOWED,
       '当前状态不允许评价',
+      HttpStatus.CONFLICT,
+    );
+  }
+
+  /** 裁决完成后的补评价窗口到期（同一个 34003，但原因要说得清楚） */
+  private reviewWindowClosed(): BusinessException {
+    return new BusinessException(
+      ErrorCode.REVIEW_NOT_ALLOWED,
+      '评价窗口已关闭',
       HttpStatus.CONFLICT,
     );
   }

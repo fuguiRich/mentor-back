@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AppointmentModule } from '../appointment/appointment.module';
+import { SysConfigModule } from '../config/config.module';
 import { UserModule } from '../user/user.module';
 import { MentorReviewController } from './mentor-review.controller';
 import { ReviewController } from './review.controller';
@@ -12,15 +13,17 @@ import { ReviewService } from './review.service';
  * `GET /mentors/:mentorId/reviews`。
  *
  * 依赖 `AppointmentModule`（复用 `findVisibleEntity` 的可见性断言——评价的
- * 可见性与预约同源，抄一份迟早会分叉）与 `UserModule`（身份链第 1 步）。
- * **不依赖 `DataScopeModule`**：本模块自己不做数据范围收窄，`@DataScope`
- * 天花板由拦截器与 `AppointmentService` 内部解析。
+ * 可见性与预约同源，抄一份迟早会分叉）、`UserModule`（身份链第 1 步）与
+ * `SysConfigModule`（异议裁决完成后补评价要读同一个
+ * `appointment.review_ttl_days` 窗口）。**不依赖 `DataScopeModule`**：本模块
+ * 自己不做数据范围收窄，`@DataScope` 天花板由拦截器与 `AppointmentService` 内部解析。
  *
  * 写只有 `student_review` 一张表；`appointment` 上唯一的写是 `4 → 6` 那一跳，
- * 与评价插入同事务（见 `ReviewRepository.createWithTransition`）。
+ * 与评价插入同事务（见 `ReviewRepository.createWithTransition`）；异议裁决完成的
+ * 预约（已是 `6`）只插评价、不动预约（见 `ReviewRepository.createForAdjudicated`）。
  */
 @Module({
-  imports: [AppointmentModule, UserModule],
+  imports: [AppointmentModule, SysConfigModule, UserModule],
   controllers: [ReviewController, MentorReviewController],
   providers: [ReviewService, ReviewRepository],
 })

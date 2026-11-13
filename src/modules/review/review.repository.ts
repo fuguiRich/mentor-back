@@ -69,6 +69,48 @@ export class ReviewRepository {
     });
   }
 
+  /**
+   * 给「异议复核已裁决完成」的预约补写评价：预约已是终态 `6 COMPLETED`，
+   * **不再迁移状态**，只插 `student_review`。
+   *
+   * 与 {@link createWithTransition} 的差别只在有没有状态迁移：裁决完成的学生
+   * 没有走过 `4 STUDENT_CONFIRMED`，如果死守「只在 `4` 上可写」，这条预约就永远
+   * 评价不了，导师的评分样本也永久缺这一条（P3 之后的补口）。
+   *
+   * 事务里先做条件读：预约仍满足「`6` + 有裁决意见 + 在窗口内」才插评价。
+   * 条件不命中返回 `null`，让 Service 抛 409 / 34003——窗口在请求处理途中到期，
+   * 或状态被并发改动（终态不可逆，实际只剩窗口到期）时，调用方得到的仍是
+   * 与预检一致的「不允许」。并发重复提交撞唯一键会抛 P2002，由 Service 映射成
+   * 409 / 34002。
+   *
+   * **`windowStart` 是 `now − appointment.review_ttl_days`**，与超期扫描
+   * `4 → 6` 用同一个窗口天数；边界语义一致：`updatedAt < windowStart` 即关窗。
+   */
+  async createForAdjudicated(
+    appointmentId: bigint,
+    input: ReviewWrite,
+    windowStart: Date,
+  ): Promise<StudentReview | null> {
+    return this.prisma.client.$transaction(async (tx) => {
+      const appointment = await tx.appointment.findFirst({
+        where: {
+          id: appointmentId,
+          status: APPOINTMENT_STATUS.COMPLETED,
+          adjudicateComment: { not: null },
+          updatedAt: { gte: windowStart },
+        },
+        select: { id: true },
+      });
+      if (appointment === null) {
+        return null;
+      }
+      return tx.studentReview.create({
+        // createdBy / updatedBy 是类型占位，扩展按当前操作者重写（DB-05）
+        data: { appointmentId, ...input, createdBy: 0n, updatedBy: 0n },
+      });
+    });
+  }
+
   async findPageByMentorProfile(
     mentorProfileId: bigint,
     skip: number,

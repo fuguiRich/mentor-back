@@ -247,6 +247,7 @@ describe('学生评价接口（P3 Task 34）(e2e)', () => {
   async function createAppointment(
     studentLogin: string,
     status: number,
+    extra: { adjudicateComment?: string } = {},
   ): Promise<bigint> {
     const row = await prisma.client.appointment.create({
       data: {
@@ -258,6 +259,9 @@ describe('学生评价接口（P3 Task 34）(e2e)', () => {
         topic: '评价用例的预约',
         questions: '这条预约只用于评价接口的判据',
         mode: 1,
+        ...(extra.adjudicateComment === undefined
+          ? {}
+          : { adjudicateComment: extra.adjudicateComment }),
         createdBy: 0n,
         updatedBy: 0n,
       },
@@ -537,6 +541,108 @@ describe('学生评价接口（P3 Task 34）(e2e)', () => {
       });
     }
   });
+
+  // ── 五、异议复核完成后仍可评价（裁决 uphold → 6，随后补评价）─────────
+
+  it('裁决完成（6 + adjudicateComment）→ 仍可评价，201，状态保持 6', async () => {
+    const id = await createAppointment('rev-student', STATUS_COMPLETED, {
+      adjudicateComment: '经核对，记录内容属实，维持原记录。',
+    });
+
+    const response = await api('rev-student')
+      .post(`/appointments/${id.toString()}/review`)
+      .send(reviewBody({ attitude: 4, expertise: 4, effect: 5 }))
+      .expect(201);
+
+    const data = (response.body as ResponseEnvelope<ReviewResponseDto>).data;
+    expect(data).toMatchObject({
+      appointmentId: id.toString(),
+      overallScore: '4.33',
+    });
+
+    // 评价不改预约状态（它已经是终态 6），也不动裁决意见
+    const row = await prisma.client.appointment.findFirst({ where: { id } });
+    expect(row?.status).toBe(STATUS_COMPLETED);
+    expect(row?.adjudicateComment).toBe('经核对，记录内容属实，维持原记录。');
+  });
+
+  it('裁决完成后重复评价 → 409 / 34002', async () => {
+    const id = await createAppointment('rev-student', STATUS_COMPLETED, {
+      adjudicateComment: '重复评价用例。',
+    });
+    await api('rev-student')
+      .post(`/appointments/${id.toString()}/review`)
+      .send(reviewBody())
+      .expect(201);
+
+    const response = await api('rev-student')
+      .post(`/appointments/${id.toString()}/review`)
+      .send(reviewBody())
+      .expect(409);
+
+    expect((response.body as ResponseEnvelope<null>).code).toBe(
+      ErrorCode.REVIEW_ALREADY_EXISTS,
+    );
+  });
+
+  it('正常完成（6 但没有裁决意见）→ 409 / 34003（不放开普通已完成单）', async () => {
+    const id = await createAppointment('rev-student', STATUS_COMPLETED);
+
+    const response = await api('rev-student')
+      .post(`/appointments/${id.toString()}/review`)
+      .send(reviewBody())
+      .expect(409);
+
+    expect((response.body as ResponseEnvelope<null>).code).toBe(
+      ErrorCode.REVIEW_NOT_ALLOWED,
+    );
+    expect((response.body as ResponseEnvelope<null>).message).toBe(
+      '当前状态不允许评价',
+    );
+  });
+
+  it('裁决完成已超过评价窗口（31 天前）→ 409 / 34003，提示窗口已关闭', async () => {
+    const id = await createAppointment('rev-student', STATUS_COMPLETED, {
+      adjudicateComment: '窗口关闭用例。',
+    });
+    await pinUpdatedAt(id, new Date(Date.now() - 31 * DAY_MS));
+
+    const response = await api('rev-student')
+      .post(`/appointments/${id.toString()}/review`)
+      .send(reviewBody())
+      .expect(409);
+
+    expect((response.body as ResponseEnvelope<null>).code).toBe(
+      ErrorCode.REVIEW_NOT_ALLOWED,
+    );
+    expect((response.body as ResponseEnvelope<null>).message).toBe(
+      '评价窗口已关闭',
+    );
+  });
+
+  it('裁决完成仍在窗口内（29 天前）→ 201', async () => {
+    const id = await createAppointment('rev-student', STATUS_COMPLETED, {
+      adjudicateComment: '窗口内用例。',
+    });
+    await pinUpdatedAt(id, new Date(Date.now() - 29 * DAY_MS));
+
+    await api('rev-student')
+      .post(`/appointments/${id.toString()}/review`)
+      .send(reviewBody())
+      .expect(201);
+  });
+
+  /**
+   * 造「很久以前裁决完成」的预约：`updated_at` 走裸 SQL 钉值。
+   * Prisma 的写路径会被审计扩展重写，只有裸 SQL 能设进指定时间（测试造数）。
+   */
+  async function pinUpdatedAt(id: bigint, at: Date): Promise<void> {
+    await prisma.client.$executeRawUnsafe(
+      'UPDATE appointment SET updated_at = ? WHERE id = ?',
+      at,
+      id,
+    );
+  }
 
   async function setNumberConfig(code: string, value: number): Promise<void> {
     await prisma.includingDeleted.sysConfig.deleteMany({ where: { code } });

@@ -57,14 +57,20 @@ export class ReviewController {
       '`comment` 可空（≤1000 字）。**`overallScore` 不在请求体里**——由服务端按 ' +
       '`round((attitude + expertise + effect) / 3, 2)` 计算（R41）；多传 → 400 / 10001。' +
       '成功时**同一事务**内把预约从 `4` 推进到 `6 COMPLETED`。' +
+      '**裁决完成的预约也可以补评价**：`6 COMPLETED` 且 `adjudicateComment != null` ' +
+      '的预约（异议复核 `5 → 6`）没有走过 `4`，允许在裁决后 ' +
+      '`appointment.review_ttl_days`（默认 30）天内补写评价；这条路径不改预约状态。' +
       '守卫先到先拒：预约不存在 / 已软删 → **404 / 32001**；不是申请人本人 → ' +
-      '**403 / 32002**；`status ≠ 4` → **409 / 34003**；已有评价 → **409 / 34002**。' +
+      '**403 / 32002**；已有评价 → **409 / 34002**；状态既不是 `4`、也不是仍在窗口内的' +
+      '裁决完成 → **409 / 34003**（窗口到期时 message 为「评价窗口已关闭」）。' +
       '响应**匿名**：不含任何学生身份字段（R44）。',
   })
   @ApiBody({ type: CreateReviewDto })
   @ApiCreatedResponse({
     type: ReviewResponseDto,
-    description: '评价成功（201），预约同时推进到 `6 COMPLETED`',
+    description:
+      '评价成功（201）：普通链路预约同时推进到 `6 COMPLETED`；' +
+      '异议裁决完成的预约只补评价、状态保持 `6`',
   })
   @ApiBadRequestResponse({
     description:
@@ -92,10 +98,12 @@ export class ReviewController {
   })
   @ApiConflictResponse({
     description:
-      '预约状态不是 4 STUDENT_CONFIRMED（409 / 34003）或该预约已评价过（409 / 34002）',
+      '状态不可评价（409 / 34003；裁决完成后超出评价窗口也是这个码，message 为' +
+      '「评价窗口已关闭」）或该预约已评价过（409 / 34002）',
     schema: {
       oneOf: errExamples(
         [ErrorCode.REVIEW_NOT_ALLOWED, '当前状态不允许评价'],
+        [ErrorCode.REVIEW_NOT_ALLOWED, '评价窗口已关闭'],
         [ErrorCode.REVIEW_ALREADY_EXISTS, '该预约已评价过'],
       ).map((example) => ({ example })),
     },
