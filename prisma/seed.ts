@@ -639,6 +639,8 @@ interface DemoProfileSpec {
   login: string;
   /** 职称 / 资质（R28）。Task 22 的「按职称资质筛选」靠它才有可筛的东西 */
   professionalTitle: string;
+  /** 对外联系手机号（导师详情 / 移动端展示）；缺失时前端回退同步源的 mobile */
+  contactMobile?: string;
   researchFields: readonly string[];
   summary: string;
   researchAchievements?: string;
@@ -658,6 +660,7 @@ const DEMO_PROFILES: readonly DemoProfileSpec[] = [
   {
     login: 'T001',
     professionalTitle: '教授',
+    contactMobile: '13800000001',
     researchFields: ['软件工程', '人工智能'],
     summary: '长期从事软件工程与人工智能方向的教学与科研工作。',
     researchAchievements: '主持省部级项目 2 项，发表论文 10 余篇。',
@@ -666,6 +669,7 @@ const DEMO_PROFILES: readonly DemoProfileSpec[] = [
   {
     login: 'T002',
     professionalTitle: '高级工程师',
+    contactMobile: '13800000002',
     researchFields: ['大数据', '企业实践'],
     summary: '企业一线的大数据平台建设与工程实践指导。',
     researchAchievements: '完成横向课题 3 项，授权发明专利 2 项。',
@@ -676,6 +680,7 @@ const DEMO_PROFILES: readonly DemoProfileSpec[] = [
   {
     login: 'T003',
     professionalTitle: '副教授',
+    contactMobile: '13800000003',
     researchFields: ['外国语言学', '跨文化研究'],
     summary: '外语教学与跨文化交际研究。',
     guidanceExperience: '指导学科竞赛获省级奖项 4 项。',
@@ -1115,6 +1120,7 @@ async function seedDemoData(rootDeptId: bigint): Promise<void> {
           affiliateOrg: spec.affiliateOrg ?? null,
           socialRoles: spec.socialRoles ?? null,
           professionalTitle: spec.professionalTitle,
+          contactMobile: spec.contactMobile ?? null,
           createdBy: SYSTEM_USER_ID,
           updatedBy: SYSTEM_USER_ID,
         },
@@ -1125,15 +1131,25 @@ async function seedDemoData(rootDeptId: bigint): Promise<void> {
       continue;
     }
 
-    // 老库（Task 20c / 22 之前建的档案）没有职称：只补空值，**不覆盖**已填的
+    // 老库缺的列（职称 / 对外手机号）只补空值，**不覆盖**已填的
     // ——管理员手工改过的档案不该被重跑 seed 冲回去。
+    const patch: { professionalTitle?: string; contactMobile?: string } = {};
     if (existingProfile.professionalTitle === null) {
+      patch.professionalTitle = spec.professionalTitle;
+    }
+    if (
+      existingProfile.contactMobile === null &&
+      spec.contactMobile !== undefined
+    ) {
+      patch.contactMobile = spec.contactMobile;
+    }
+    if (Object.keys(patch).length > 0) {
       await prisma.mentorProfile.update({
         where: { id: existingProfile.id },
-        data: { professionalTitle: spec.professionalTitle },
+        data: patch,
       });
       console.log(
-        `导师档案（补职称）：${spec.login} / ${spec.professionalTitle}`,
+        `导师档案（补字段）：${spec.login} / ${Object.keys(patch).join(', ')}`,
       );
     }
   }
@@ -1300,6 +1316,96 @@ async function seedDemoData(rootDeptId: bigint): Promise<void> {
     }
   }
 
+  // ---- 3.7 评价链路演示（P3 Task 34 + 异议裁决后的补评价）----
+  // 两条预约各演示一条链路：
+  // 1. 正常链路：学生确认记录后评价 → `4 → 6`，评价进导师评分样本；
+  // 2. 异议链路：学院管理员裁决 `uphold` → `5 → 6`，**不经过 4**，预约上只有
+  //    `adjudicateComment`、没有评价。学生登录后仍能在评价窗口内补评价
+  //    （P3 之后的补口），这条数据就是为它准备的。
+  // 两条都带指导记录：`status = 6` 的正常形状本来就有记录，没有记录的空壳会让
+  // 模拟数据看起来像坏数据。
+  const secondStudent = await prisma.syncPerson.findFirst({
+    where: { login: '20230002', deletedAt: null },
+  });
+  if (demoProfile !== null && demoPerson !== null && demoStudent !== null) {
+    const now = Date.now();
+    const normalAppointmentId = await ensureDemoAppointment({
+      studentPersonId: demoStudent.id,
+      mentorProfileId: demoProfile.id,
+      topic: '演示：挑战杯项目选题与打磨',
+      requestedTime: new Date(now - 7 * 86_400_000),
+      handleComment: '已确认，按约定时间线上沟通。',
+    });
+    if (normalAppointmentId !== null) {
+      await ensureDemoGuidanceRecord({
+        appointmentId: normalAppointmentId,
+        mentorPersonId: demoPerson.id,
+        actualTime: new Date(now - 6 * 86_400_000),
+        coreContent: '围绕挑战杯选题做了三方向对比，确定以校园低碳为切口。',
+        followUp: '两周内交一版 3000 字商业计划书初稿。',
+      });
+      await ensureDemoReview({
+        appointmentId: normalAppointmentId,
+        attitude: 5,
+        expertise: 5,
+        effect: 4,
+        overallScore: '4.67',
+        comment: '讲解清晰，给的三条技术路线很有用。',
+      });
+    }
+
+    if (secondStudent !== null) {
+      const adjudicatedAppointmentId = await ensureDemoAppointment({
+        studentPersonId: secondStudent.id,
+        mentorProfileId: demoProfile.id,
+        topic: '演示：异议裁决完成后待评价',
+        requestedTime: new Date(now - 5 * 86_400_000),
+        handleComment: '已确认，线下沟通。',
+        adjudicateComment:
+          '经核对指导记录与过程材料，记录内容属实，异议不成立，维持原记录。',
+      });
+      if (adjudicatedAppointmentId !== null) {
+        await ensureDemoGuidanceRecord({
+          appointmentId: adjudicatedAppointmentId,
+          mentorPersonId: demoPerson.id,
+          actualTime: new Date(now - 4 * 86_400_000),
+          coreContent: '梳理项目技术路线，确认数据采集与清洗的分工。',
+          followUp: '按会议纪要完成第一轮数据标注。',
+        });
+      }
+    }
+  }
+
+  // 系统通知（消息类型 4）：管理员新建消息走这个类型，和 3.6 的预约提醒（类型 1）
+  // 不是同一形状，消息中心的两个入口都要有现成数据可看。
+  const demoStudentUser = await prisma.sysUser.findFirst({
+    where: { username: '20230001', deletedAt: null },
+  });
+  if (demoStudentUser !== null) {
+    const existingSystemMessage = await prisma.message.findFirst({
+      where: {
+        recipientUserId: demoStudentUser.id,
+        type: 4,
+        title: '演示：系统通知',
+        deletedAt: null,
+      },
+    });
+    if (existingSystemMessage === null) {
+      await prisma.message.create({
+        data: {
+          recipientUserId: demoStudentUser.id,
+          type: 4,
+          title: '演示：系统通知',
+          content:
+            '本学期创新创业导师预约通道已开放，请提前查看导师可指导时段。',
+          createdBy: SYSTEM_USER_ID,
+          updatedBy: SYSTEM_USER_ID,
+        },
+      });
+      console.log('消息（补建）：20230001 / 系统通知');
+    }
+  }
+
   // ---- 4. 把账号打出来，省得再去库里翻 ----
   const passwordNote =
     process.env.SEED_DEMO_PASSWORD === undefined
@@ -1312,6 +1418,122 @@ async function seedDemoData(rootDeptId: bigint): Promise<void> {
       `  ${spec.login.padEnd(9)} ${spec.realName.padEnd(8, '　')} ${spec.roles.join(',')}`,
     );
   }
+}
+
+/**
+ * 演示预约：同一「学生 + 导师 + 主题」已有未删行就复用。
+ * 只给 seed 造演示用，走的是没有扩展的裸 client——业务状态机不在这里重复。
+ */
+async function ensureDemoAppointment(input: {
+  studentPersonId: bigint;
+  mentorProfileId: bigint;
+  topic: string;
+  requestedTime: Date;
+  handleComment: string;
+  adjudicateComment?: string;
+}): Promise<bigint> {
+  const existing = await prisma.appointment.findFirst({
+    where: {
+      studentPersonId: input.studentPersonId,
+      mentorProfileId: input.mentorProfileId,
+      topic: input.topic,
+      deletedAt: null,
+    },
+    select: { id: true },
+  });
+  if (existing !== null) {
+    return existing.id;
+  }
+
+  const row = await prisma.appointment.create({
+    data: {
+      studentPersonId: input.studentPersonId,
+      mentorProfileId: input.mentorProfileId,
+      // 1 双创竞赛指导；演示数据只求形状真实，不覆盖全部类型
+      type: 1,
+      // 6 COMPLETED：演示数据要能直接打开评价 / 统计页
+      status: 6,
+      requestedTime: input.requestedTime,
+      topic: input.topic,
+      questions: '演示数据：项目方向是否可行？需要补哪些材料？',
+      mode: 1,
+      handleComment: input.handleComment,
+      ...(input.adjudicateComment === undefined
+        ? {}
+        : { adjudicateComment: input.adjudicateComment }),
+      createdBy: SYSTEM_USER_ID,
+      updatedBy: SYSTEM_USER_ID,
+    },
+    select: { id: true },
+  });
+  console.log(`预约（补建）：${input.topic}`);
+  return row.id;
+}
+
+/** 演示指导记录：一条预约一条（`uk_guidance_record_appointment_active`） */
+async function ensureDemoGuidanceRecord(input: {
+  appointmentId: bigint;
+  mentorPersonId: bigint;
+  actualTime: Date;
+  coreContent: string;
+  followUp: string;
+}): Promise<void> {
+  const existing = await prisma.guidanceRecord.findFirst({
+    where: { appointmentId: input.appointmentId, deletedAt: null },
+    select: { id: true },
+  });
+  if (existing !== null) {
+    return;
+  }
+
+  await prisma.guidanceRecord.create({
+    data: {
+      appointmentId: input.appointmentId,
+      actualTime: input.actualTime,
+      mode: 1,
+      coreContent: input.coreContent,
+      followUp: input.followUp,
+      submittedBy: input.mentorPersonId,
+      submittedAt: input.actualTime,
+      // 60 分钟：考核工作量口径要有时长可算（R58）
+      durationMinutes: 60,
+      createdBy: SYSTEM_USER_ID,
+      updatedBy: SYSTEM_USER_ID,
+    },
+  });
+  console.log(`指导记录（补建）：预约 ${input.appointmentId.toString()}`);
+}
+
+/** 演示评价：一条预约一条（`uk_student_review_appointment_active`） */
+async function ensureDemoReview(input: {
+  appointmentId: bigint;
+  attitude: number;
+  expertise: number;
+  effect: number;
+  overallScore: string;
+  comment: string;
+}): Promise<void> {
+  const existing = await prisma.studentReview.findFirst({
+    where: { appointmentId: input.appointmentId, deletedAt: null },
+    select: { id: true },
+  });
+  if (existing !== null) {
+    return;
+  }
+
+  await prisma.studentReview.create({
+    data: {
+      appointmentId: input.appointmentId,
+      attitude: input.attitude,
+      expertise: input.expertise,
+      effect: input.effect,
+      overallScore: input.overallScore,
+      comment: input.comment,
+      createdBy: SYSTEM_USER_ID,
+      updatedBy: SYSTEM_USER_ID,
+    },
+  });
+  console.log(`评价（补建）：预约 ${input.appointmentId.toString()}`);
 }
 
 /**
