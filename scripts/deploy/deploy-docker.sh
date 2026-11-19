@@ -253,8 +253,10 @@ main() {
   NGINX_CONF_DIR="$(read_env NGINX_CONF_DIR)"
   WEB_DOMAIN="$(read_env WEB_DOMAIN)"
   MOBILE_DOMAIN="$(read_env MOBILE_DOMAIN)"
+  BUILD_PULL="$(read_env BUILD_PULL)"
   : "${NGINX_CONFIGURE:=1}"
   : "${NGINX_CONF_DIR:=/etc/nginx/conf.d}"
+  : "${BUILD_PULL:=0}"
 
   local services
   mapfile -t services < <(services_for)
@@ -265,7 +267,11 @@ main() {
   step "目标服务：${services[*]}"
 
   if (( SKIP_BUILD == 0 )); then
-    step "构建镜像（--pull）"
+    if (( BUILD_PULL == 1 )); then
+      step "构建镜像（--pull）"
+    else
+      step "构建镜像（使用本地基础镜像，不强制 pull）"
+    fi
     # 保留上一版镜像：回滚时 docker tag <name>:previous <name>:local 再 up --no-build
     local image
     for image in mentor-back mentor-web mentor-mobile; do
@@ -274,7 +280,11 @@ main() {
         printf '  已保存上一版：%s:previous\n' "$image"
       fi
     done
-    "${COMPOSE[@]}" build --pull "${services[@]}"
+    if (( BUILD_PULL == 1 )); then
+      "${COMPOSE[@]}" build --pull "${services[@]}"
+    else
+      "${COMPOSE[@]}" build "${services[@]}"
+    fi
   else
     warn "已跳过构建（--skip-build），使用已有镜像"
   fi
