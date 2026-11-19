@@ -46,7 +46,6 @@ pnpm start:dev
 - 后端 + 管理端 + 学生端：`bash scripts/deploy/deploy.sh all`
 - Docker / Compose：`bash scripts/deploy/deploy-docker.sh all`
 - （可选）从本地推送到远端：`bash scripts/deploy/deploy-remote.sh all`
-- （可选）本地交互向导：`bash scripts/deploy/deploy-oneclick.sh`
 
 首次准备、systemd / nginx 示例、回滚与生产注意事项见
 [docs/部署-v1.md](docs/部署-v1.md)；容器化部署见

@@ -1,60 +1,62 @@
-# Docker 部署手册（v1）
+# Docker 部署手册（v1，复用宿主机 MySQL）
 
 > 适用：一台远端 Linux 服务器，Docker Engine 24+ / Compose v2。
-> 三端全部容器化：MySQL、Redis、后端、管理端、学生端。
-> 脚本：`scripts/deploy/deploy-docker.sh`（服务器上执行）、
-> `scripts/deploy/deploy-remote.sh`（本地一键发到远端）。
+> 容器化：Redis、后端、管理端、学生端；**MySQL 使用宿主机已安装的实例**。
+> 脚本：`scripts/deploy/deploy-docker.sh`（服务器上执行）。
 >
 > **所有 `docker build` / `docker compose` 都发生在远端 Linux 服务器上。**
-> 本地（Windows / macOS）只负责 SSH 和源码同步——本地不需要安装 Docker。
 
 ## 服务器上直接部署（推荐）
 
+部署包里的 `deploy/.env` 已按 host 模式写好（`DB_MODE=host` + `DATABASE_URL`）。
+复制到服务器后按需改 MySQL 密码 / JWT，然后：
+
 ```bash
 cd /opt/mentor/mentor-back
-cp deploy/.env.example deploy/.env   # 首次：填 MySQL 密码 / JWT_SECRET
+chmod 600 deploy/.env
 bash scripts/deploy/deploy-docker.sh all
 ```
 
-检测到服务器已有 nginx 时会直接复用，不会重复安装；MySQL 使用 compose 内独立容器，
-不影响宿主机上已有的 MySQL。
+检测到服务器已有 nginx 时会直接复用，不会重复安装；MySQL 连接宿主机
+`127.0.0.1:3306`，不再启动数据库容器。
 
-## 可选：本地交互向导
+---
 
-在本地（Git Bash / WSL / macOS）执行：
+## 0.1 复用宿主机已安装的 MySQL（DB_MODE=host）
 
-```bash
-bash scripts/deploy/deploy-oneclick.sh
+服务器上已经有 MySQL、不想再起数据库容器时用这套：
+
+```dotenv
+# deploy/.env
+DB_MODE=host
+DATABASE_URL=mysql://mentor:密码@127.0.0.1:3306/mentor_back
+REDIS_PORT=6379
 ```
 
-只需要回答：
+编排文件会自动切换到 `deploy/docker-compose.host-db.yml`：
 
-1. 服务器 IP / SSH 用户（默认 root）/ SSH 端口（默认 22）；
-2. 首次连接时输入一次服务器密码（用于安装公钥，之后免密）；
-3. 后端 / 管理端 / 学生端端口（默认 3000 / 8081 / 8082）；
-4. 访问方式：`1` 直接用 IP+端口（快速验证），`2` 域名 + nginx；
-5. 首次部署时输入 **MySQL root 密码** 和 **应用用户（mentor）密码**（不会随机生成；
-   应用密码会拼进 `DATABASE_URL`，只允许字母、数字、`_ . -`）。
+- 后端 / migrate 用 `network_mode: host`，直接连 `127.0.0.1:3306`；
+- Redis 仍由容器提供，发布到 `127.0.0.1:6379`（宿主机已有 Redis 时改 `REDIS_PORT`）；
+- 两个前端容器走 bridge，通过 `extra_hosts: mentor-back:host-gateway` 把 `/api` 反代到宿主机 3000；
+- 宿主机 nginx 继续负责域名 / TLS，转发到 `127.0.0.1:8081` / `8082`。
 
-脚本会自动生成 JWT 密钥、写服务器 `deploy/.env`、上传三端源码、
-在服务器上安装 Docker / Compose / nginx、构建、迁移、启动、健康检查；首次还会
-创建超管（随机密码只在输出里打印一次）。
+MySQL 侧先建库建号（后端从宿主机本机连接，不需要开放 0.0.0.0）：
 
-非交互（CI / 重复部署）：
-
-```bash
-DEPLOY_SSH_PASSWORD=*** \
-DEPLOY_MYSQL_ROOT_PASSWORD=*** \
-DEPLOY_MYSQL_PASSWORD=*** \
-bash scripts/deploy/deploy-oneclick.sh \
-  --host 1.2.3.4 --user root --backend-port 3000 --web-port 8081 \
-  --mobile-port 8082 --access ip
+```sql
+CREATE DATABASE mentor_back CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'mentor'@'localhost' IDENTIFIED BY '你的密码';
+CREATE USER 'mentor'@'127.0.0.1' IDENTIFIED BY '你的密码';
+GRANT ALL PRIVILEGES ON mentor_back.* TO 'mentor'@'localhost';
+GRANT ALL PRIVILEGES ON mentor_back.* TO 'mentor'@'127.0.0.1';
+FLUSH PRIVILEGES;
 ```
 
-> 本地没有 `sshpass` 时（Windows Git Bash 默认没有），首次会在 `ssh-copy-id`
-> 处提示输入一次服务器密码；也可以先把公钥装到服务器，再跑脚本。
-> 重复执行时默认沿用服务器上的配置与访问方式；nginx 站点只更新
-> `mentor-web.conf` / `mentor-mobile.conf`（写前备份、写后校验，失败回滚）。
+然后照常：
+
+```bash
+cd /opt/mentor/mentor-back
+bash scripts/deploy/deploy-docker.sh all
+```
 
 ---
 
@@ -127,22 +129,25 @@ sudo apt install -y nginx
 
 ## 2. 配置 `deploy/.env`（服务器本地，不入库）
 
+部署包里已经带了一份 host 模式的 `deploy/.env`，复制到服务器后检查：
+
 ```bash
 cd /opt/mentor/mentor-back
-cp deploy/.env.example deploy/.env
 chmod 600 deploy/.env
 vi deploy/.env
 ```
 
-必须改的：
+重点确认：
 
 | 键 | 说明 |
 | --- | --- |
-| `MYSQL_ROOT_PASSWORD` / `MYSQL_PASSWORD` | 用 URL 安全字符（避免 `@ : / ? # %`） |
-| `JWT_SECRET` | `openssl rand -base64 48` |
+| `DB_MODE` | 固定 `host`（复用宿主机 MySQL） |
+| `DATABASE_URL` | `mysql://mentor:密码@127.0.0.1:3306/mentor_back`，密码要和 MySQL 用户一致 |
+| `REDIS_PORT` | Redis 容器映射端口，默认 6379 |
+| `JWT_SECRET` | 已生成；换环境时用 `openssl rand -base64 48` 重新生成 |
 | `SSO_*` | 按学校值；不用统一认证就保持 `SSO_LOGIN_ENABLED=0` |
 
-`DATABASE_URL` / `REDIS_URL` / `FILE_ROOT` / `PORT` 由 `docker-compose.yml` 注入，不需要写。
+`REDIS_URL` / `FILE_ROOT` / `PORT` 由 `docker-compose.host-db.yml` 注入，不需要写。
 **不要在服务器上设 `SEED_DEMO_DATA=1`。**
 
 ---
@@ -184,43 +189,19 @@ cd /opt/mentor/mentor-back
 bash scripts/deploy/deploy-docker.sh all --seed
 ```
 
-本地一键（推荐）：
-
-```bash
-# 本地 deploy-remote.env 里设：
-#   DEPLOY_MODE=docker
-#   BACKEND_SYNC=git   # 或 tar（本地改动未提交时）
-bash scripts/deploy/deploy-remote.sh all --seed
-```
-
 `--seed` 只做一次：创建 `super_admin`，**随机密码只打印一次**。之后不要再用。
 
-> 首次部署时远端会自动安装缺失的 Docker / Compose / nginx / curl / tar。
+> 首次部署时脚本会自动安装缺失的 Docker / Compose / nginx / curl / tar。
 > Docker 安装优先走 `get.docker.com`，需要服务器能访问该地址或系统包源；
-> 全部装好后再执行镜像构建。
+> 全部装好后再执行镜像构建。MySQL 不会启动容器，直接连宿主机。
 
-本地一键时实际发生的事：
-
-```text
-本地（Windows/macOS）                        远端 Linux 服务器
-  ssh 连通性检查                     ──▶
-  tar 上传后端源码（git 模式则 ssh 执行 git pull）
-  tar 上传 mentor-web / mentor-mobile  ──▶  /opt/mentor/*
-                                              │
-                                              ├─ docker compose build（服务器上的 Docker）
-                                              ├─ migrate 容器：prisma migrate deploy
-                                              ├─ up -d：mysql / redis / mentor-back / web / mobile
-                                              └─ curl 127.0.0.1:3000/health
-  ◀────────────────────────────────────────── 日志实时输出
-```
-
-服务器 Docker 需要能拉取 `node:22-bookworm-slim`、`nginx:1.27-alpine`、`mysql:8.4`、
-`redis:7-alpine`；内网环境请提前 `docker pull` 或配置镜像加速（不需要 `docker/dockerfile` 外部 frontend 镜像）。
+服务器 Docker 需要能拉取 `node:22-bookworm-slim`、`nginx:1.27-alpine`、`redis:7-alpine`；
+内网环境请提前 `docker pull` 或配置镜像加速。
 
 首次部署后：
 
 ```bash
-docker compose -f deploy/docker-compose.yml ps
+docker compose -f deploy/docker-compose.host-db.yml ps
 curl -fsS http://127.0.0.1:3000/health
 curl -fsS http://127.0.0.1:8081/ | head
 curl -fsS http://127.0.0.1:8082/ | head
@@ -263,7 +244,7 @@ bash scripts/deploy/deploy-remote.sh all
 
 ```bash
 cd /opt/mentor/mentor-back
-COMPOSE="docker compose -f deploy/docker-compose.yml"
+COMPOSE="docker compose -f deploy/docker-compose.host-db.yml"
 
 $COMPOSE ps
 $COMPOSE logs -f --tail=100 mentor-back
@@ -279,14 +260,14 @@ $COMPOSE exec mentor-back node -e "console.log(process.version)"
 
 | 卷 | 内容 |
 | --- | --- |
-| `mentor_mysql-data` | MySQL 数据目录 |
 | `mentor_redis-data` | Redis AOF（会话 / 限流，可丢） |
 | `mentor_uploads` | 上传文件（`FILE_ROOT=/data/uploads`） |
 
+MySQL 数据在宿主机上，用 mysqldump 备份：
+
 ```bash
-# MySQL 逻辑备份（推荐每日 cron）
-docker compose -f deploy/docker-compose.yml exec -T mysql \
-  mysqldump -u root -p"$MYSQL_ROOT_PASSWORD" --single-transaction "$MYSQL_DATABASE" \
+# MySQL 逻辑备份（推荐每日 cron；账号密码来自 deploy/.env）
+mysqldump -h 127.0.0.1 -u mentor -p --single-transaction mentor_back \
   | gzip > /backup/mentor-$(date +%F-%H%M).sql.gz
 
 # 上传文件：直接打包卷
@@ -302,7 +283,7 @@ docker run --rm -v mentor_uploads:/data -v /backup:/backup alpine \
 
 ```bash
 cd /opt/mentor/mentor-back
-COMPOSE="docker compose -f deploy/docker-compose.yml"
+COMPOSE="docker compose -f deploy/docker-compose.host-db.yml"
 
 docker tag mentor-back:previous mentor-back:local
 docker tag mentor-web:previous mentor-web:local

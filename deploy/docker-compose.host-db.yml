@@ -1,0 +1,110 @@
+# Docker 部署（复用宿主机已安装的 MySQL）
+#
+# 适用：服务器上已有 MySQL，不想再起一个数据库容器。
+# 用法（在 mentor-back 目录）：
+#   deploy/.env 已随部署包提供；确认 DATABASE_URL 指向宿主机 MySQL 后：
+#   bash scripts/deploy/deploy-docker.sh all
+#
+# 原理：
+# - 后端 / migrate 用 host 网络，直接连 127.0.0.1:3306（宿主机 MySQL）
+# - Redis 仍由容器提供，发布到 127.0.0.1:6379（若宿主机已有 Redis，改 REDIS_PORT 或不用本文件）
+# - 前端容器走 bridge，extra_hosts 把 mentor-back 指到宿主机网关，由容器内 nginx
+#   反代到宿主机 3000 端口
+# - 宿主机 nginx 继续做域名 / TLS，转发到 127.0.0.1:8081 / 8082
+
+name: mentor
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "3"
+
+x-backend: &backend
+  image: mentor-back:local
+  build:
+    context: ..
+    dockerfile: deploy/docker/backend.Dockerfile
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *default-logging
+
+  migrate:
+    <<: *backend
+    restart: "no"
+    network_mode: host
+    env_file: [.env]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?deploy/.env 需要 DATABASE_URL（宿主机 MySQL）}
+      REDIS_URL: redis://127.0.0.1:${REDIS_PORT:-6379}/0
+    command: ["node_modules/.bin/prisma", "migrate", "deploy"]
+
+  mentor-back:
+    <<: *backend
+    restart: unless-stopped
+    network_mode: host
+    env_file: [.env]
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DATABASE_URL: ${DATABASE_URL:?deploy/.env 需要 DATABASE_URL（宿主机 MySQL）}
+      REDIS_URL: redis://127.0.0.1:${REDIS_PORT:-6379}/0
+      FILE_ROOT: /data/uploads
+    volumes:
+      - uploads:/data/uploads
+    depends_on:
+      redis:
+        condition: service_healthy
+    logging: *default-logging
+
+  mentor-web:
+    image: mentor-web:local
+    build:
+      context: ../../mentor-web
+      dockerfile: ../mentor-back/deploy/docker/frontend.Dockerfile
+      args:
+        API_ENV_VAR: VITE_API_BASE
+        API_BASE: /api
+    restart: unless-stopped
+    extra_hosts:
+      - "mentor-back:host-gateway"
+    ports:
+      - "${BIND_ADDR:-127.0.0.1}:${WEB_PORT:-8081}:80"
+    depends_on:
+      - mentor-back
+    logging: *default-logging
+
+  mentor-mobile:
+    image: mentor-mobile:local
+    build:
+      context: ../../mentor-mobile
+      dockerfile: ../mentor-back/deploy/docker/frontend.Dockerfile
+      args:
+        API_ENV_VAR: VITE_API_BASE_URL
+        API_BASE: /api
+    restart: unless-stopped
+    extra_hosts:
+      - "mentor-back:host-gateway"
+    ports:
+      - "${BIND_ADDR:-127.0.0.1}:${MOBILE_PORT:-8082}:80"
+    depends_on:
+      - mentor-back
+    logging: *default-logging
+
+volumes:
+  redis-data:
+  uploads:

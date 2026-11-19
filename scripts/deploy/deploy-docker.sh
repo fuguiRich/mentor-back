@@ -13,13 +13,13 @@
 #   --check         只检查 compose 配置与文件，不做任何变更（含不安装）
 #   --no-install    缺依赖时报错，不自动安装
 #
-# 配置文件：deploy/.env（服务器本地，参考 deploy/.env.example）。
+# 配置文件：deploy/.env（随部署包提供，服务器本地维护）。
 # 宿主机 nginx / TLS 见 docs/部署-docker.md。
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-COMPOSE_FILE="${DOCKER_COMPOSE_FILE:-$REPO_ROOT/deploy/docker-compose.yml}"
+COMPOSE_FILE="${DOCKER_COMPOSE_FILE:-$REPO_ROOT/deploy/docker-compose.host-db.yml}"
 COMPOSE_DIR="$(cd "$(dirname "$COMPOSE_FILE")" && pwd)"
 ENV_FILE="${DOCKER_ENV_FILE:-$COMPOSE_DIR/.env}"
 SUDO="${SUDO-sudo}"
@@ -109,7 +109,7 @@ check() {
   "${DOCKER[@]}" compose version >/dev/null 2>&1 || die "缺少 docker compose（v2）"
   [[ -f "$COMPOSE_FILE" ]] || die "compose 文件不存在：$COMPOSE_FILE"
   [[ -f "$ENV_FILE" ]] ||
-    die "环境文件不存在：$ENV_FILE（cp deploy/.env.example deploy/.env 后填写）"
+    die "环境文件不存在：$ENV_FILE（部署包需包含 deploy/.env）"
 
   printf '  docker %s ｜ compose %s\n' \
     "$(docker --version | awk '{print $3}' | tr -d ,)" \
@@ -224,7 +224,15 @@ main() {
   # 先确认配置存在，避免为一个还没准备好的部署去装 Docker
   [[ -f "$COMPOSE_FILE" ]] || die "compose 文件不存在：$COMPOSE_FILE"
   [[ -f "$ENV_FILE" ]] ||
-    die "环境文件不存在：$ENV_FILE（cp deploy/.env.example deploy/.env 后填写）"
+    die "环境文件不存在：$ENV_FILE（部署包需包含 deploy/.env）"
+
+  # 当前部署包只保留 host 模式：复用宿主机 MySQL
+  DB_MODE="$(read_env DB_MODE)"
+  : "${DB_MODE:=host}"
+  if [[ "$DB_MODE" != "host" ]]; then
+    die "当前只支持 DB_MODE=host（复用宿主机 MySQL）；deploy/docker-compose.yml 已移除"
+  fi
+  info "DB_MODE=host：使用宿主机 MySQL（$COMPOSE_FILE）"
 
   ensure_environment docker
   resolve_docker

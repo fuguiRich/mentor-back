@@ -142,7 +142,7 @@ sync_backend_tar() {
   [[ -d "$LOCAL_BACKEND_DIR" ]] || die "后端源码不存在：$LOCAL_BACKEND_DIR"
   step "同步后端源码（tar，保留远端 .env / .uploads / deploy.env）"
   tar -czf - -C "$LOCAL_BACKEND_DIR" \
-    --exclude=node_modules --exclude=dist --exclude=.env --exclude=.env.test.local \
+    --exclude=node_modules --exclude=dist --exclude=./.env --exclude=.env.test.local \
     --exclude=.uploads --exclude=coverage --exclude='*.log' \
     . | remote "set -e
       mkdir -p '$REMOTE_APP_ROOT'
